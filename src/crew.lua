@@ -78,6 +78,35 @@ function Crew.roleName(role)
     return Crew.ROLE_NAMES[role] or role
 end
 
+--== Cara ==================================================================
+
+-- Cuantas caras hay en la reserva de assets/crew_pjNN.png. src/art.lua
+-- registra exactamente estas, asi que subir el numero pide subir los PNG (o
+-- quedarse con el respaldo generado, que tambien cuenta hasta aqui).
+Crew.FACES = 14
+
+-- Semilla propia de un tripulante, sacada de su nombre.
+--
+-- El nombre ya viene del hash del puerto y del dia, y ya se guarda con la
+-- partida: colgar de el la cara y el paso por cubierta sale gratis y respeta
+-- la regla de que nada aleatorio se guarda. Guardar un campo "cara" habria
+-- sido guardar una semilla, y ademas habria que migrar a los que ya estan
+-- enrolados en las partidas viejas.
+--
+-- Que dos tripulantes con el mismo nombre y apodo salgan clavados no es un
+-- fallo: son 24 x 16 combinaciones y, si se repite, es que se llaman igual.
+function Crew.seed(member)
+    return Util.hashText(member.name or "")
+end
+
+-- Cual de las caras de la reserva le toca, en [1, Crew.FACES]. Ya no depende
+-- del gremio: antes habia un monigote por gremio y el color decia el oficio,
+-- pero con caras dibujadas la gente se reconoce por la cara, y el oficio se
+-- lee por DONDE esta plantado en cubierta.
+function Crew.face(member)
+    return Util.hashInt(1, Crew.FACES, Crew.seed(member), 11, 0)
+end
+
 -- Cuanto rinde un tripulante en un puesto. Fuera de su gremio rinde a un
 -- tercio: puedes poner al cocinero al timon, pero se nota.
 function Crew.contribution(member, station)
