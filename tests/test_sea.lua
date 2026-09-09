@@ -21,9 +21,13 @@
 --   * que con poco viento el mar este de verdad mas quieto. Es una diferencia
 --     de cuentas -- menos trazos, ninguno blanco -- y a ojo, en dos capturas
 --     separadas por diez minutos de juego, es indistinguible de la suerte.
+--   * a que VELOCIDAD desfila. Mirando la pantalla el mar corriendo se lee
+--     como "hay viento", y solo comparandolo con lo que anda el barco se ve
+--     que lo que en realidad dice es que el barco va marcha atras. Es un
+--     numero contra Ship.BASE_SPEED, no una impresion.
 --
--- La estela se mide igual: los brazos de la V solo dicen la verdad si se abren
--- con lo que el barco ANDA, y eso son dos capturas y una resta.
+-- La estela se mide igual: la uve solo dice la verdad si se abre con lo que el
+-- barco ANDA, y eso son dos capturas y una resta.
 
 package.path = "./?.lua;" .. package.path
 
@@ -205,42 +209,85 @@ do
           .. fresco["sea.gust"] .. " con viento")
 end
 
+--== Desfile ===============================================================
+
+print("\nel mar no corre mas que el barco")
+do
+    -- La escala del juego la pone el barco: Ship.BASE_SPEED es lo que anda uno
+    -- perfecto. Un campo de agua que cruce la pantalla mas deprisa que eso no
+    -- se lee como viento, se lee como que el barco cia a toda maquina -- que
+    -- es exactamente lo que hacia el mar de antes, a treinta y uno de desfile
+    -- contra los siete del barco.
+    local ola = Sea.WAVE_DRIFT[1] + Sea.WAVE_DRIFT[2]
+    check("la ola no adelanta al barco", ola <= Ship.BASE_SPEED,
+          string.format("%.1f px/s de mar contra %.1f del barco",
+                        ola, Ship.BASE_SPEED))
+
+    -- La racha si puede correr mas que la ola -- es el viento tocando el agua,
+    -- no el agua moviendose -- pero no el triple.
+    local racha = Sea.GUST_DRIFT[1] + Sea.GUST_DRIFT[2]
+    check("y la racha corre mas que la ola, pero no se desboca",
+          racha > ola and racha <= 2 * Ship.BASE_SPEED,
+          string.format("%.1f px/s", racha))
+
+    -- En calma tambien tiene que haber desfile: un mar clavado se lee como una
+    -- pantalla colgada, que es la leccion del corcho del redal.
+    check("y en calma el agua sigue moviendose",
+          Sea.WAVE_DRIFT[1] > 0 and Sea.GUST_DRIFT[1] > 0)
+end
+
 --== Estela ================================================================
 
 print("\nla estela dice lo que hace el barco")
 do
     local s = sail(0, 1.0, math.pi / 2, 10)
 
-    -- Los brazos de la V se miden por lo ANCHO que abre la estela: el punto
-    -- mas apartado de la crujia. Todo en pixeles de arte.
-    local function halfWidth(state)
+    -- La estela es el bigote de proa estirado por popa: una escalera de arcos
+    -- (sea.wake1..5) que se elige por lo lejos que ha quedado cada uno. Asi
+    -- que lo que abre la uve es QUE ESCALON se ha alcanzado, y eso es lo que
+    -- se lee del dibujo. La estela se pinta fuera de Sea.draw, encima del
+    -- barco, asi que hay que llamarla aparte -- como hace voyage.lua.
+    local function widest(state)
         painted = {}
         Sea.draw(state)
-        local cx = Constants.shipAnchor()
-        local wide = 0
+        Sea.drawWake(state)
+        local top = 0
         for _, p in ipairs(painted) do
-            if p.id == "sea.drop" or p.id == "sea.foam" then
-                wide = math.max(wide, math.abs(p.x - cx))
-            end
+            local step = p.id and p.id:match("^sea%\.wake(%d)$")
+            if step then top = math.max(top, tonumber(step)) end
         end
-        return wide
+        return top
     end
 
-    local ancho = halfWidth(s)
-    check("la V se abre por detras del barco", ancho > 6, ancho .. " px")
+    -- Y que el arco de verdad se abre a lo ancho: el ultimo escalon tiene que
+    -- asomar por fuera del casco, o la estela se queda escondida debajo.
+    local paso = widest(s)
+    check("la estela llega a los escalones anchos", paso >= 3,
+          "escalon " .. paso)
+    local ancho = Art.size("sea.wake" .. math.max(paso, 1))
+    check("y el arco es mas ancho que el espejo de popa", ancho > 26,
+          ancho .. " px de arco")
 
-    -- Y se abre con lo que el barco ANDA, no con el reloj: parado no se abre.
+    -- Y dice lo que se corre. El angulo de la uve no cambia -- el escalon se
+    -- elige por pixeles quedados atras, no por velocidad --, lo que cambia es
+    -- lo LARGA que llega a ser: en el ojo del viento se anda al diez por
+    -- ciento y por popa no puede quedar mas que un hervor contra el codaste.
+    local pesca = widest(sail(0, 1.0, 0, 10))
+    check("y en el ojo del viento se queda pegada al codaste", pesca < paso,
+          "escalon " .. pesca .. " parado contra " .. paso .. " lanzado")
+
+    -- Se abre con lo que el barco ANDA, no con el reloj: parado no se abre.
     -- (Se para el barco pero se sigue llamando a Sea.update, que es lo que
     -- pasaria de verdad al quedarse en el ojo del viento.)
-    local antes = halfWidth(s)
+    local antes = widest(s)
     for _ = 1, 30 do Sea.update(s, 1 / 30) end
     check("y no sigue abriendose con el barco parado",
-          halfWidth(s) <= antes, antes .. " -> " .. halfWidth(s))
+          widest(s) <= antes, antes .. " -> " .. widest(s))
 
     -- Amarrado no se siembra estela nueva, pero la vieja se deshace sola.
     s.docked = "x"
     for _ = 1, 30 * 20 do Sea.update(s, 1 / 30) end
-    check("y amarrado acaba sin una brizna de espuma", halfWidth(s) == 0)
+    check("y amarrado acaba sin una brizna de espuma", widest(s) == 0)
 end
 
 --== Bigote de proa ========================================================

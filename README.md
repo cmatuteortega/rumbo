@@ -22,7 +22,7 @@ faltan dos por dibujar (la bodega y el trapo arrizado).
 love .                        # desde la raiz del proyecto
 lua5.1 tests/test_sim.lua     # prueba de la simulacion, sin ventana
 lua5.1 tests/test_halyard.lua # la driza: fisica y geometria
-lua5.1 tests/test_sea.lua     # el mar: orientacion, calma y estela
+lua5.1 tests/test_sea.lua     # el mar: orientacion, calma, desfile y estela
 love .                       # desde la raiz del proyecto
 lua5.1 tests/test_sim.lua    # prueba de la simulacion, sin ventana
 lua5.1 tests/test_deck.lua   # el paseo de la tripulacion por cubierta
@@ -170,7 +170,7 @@ rumbo/
 └── tests/
     ├── test_sim.lua      # prueba headless de la simulacion
     ├── test_halyard.lua  # prueba de la driza (fisica y geometria, con love de mentira)
-    └── test_sea.lua      # prueba del mar (orientacion y estela, con love de mentira)
+    └── test_sea.lua      # prueba del mar (orientacion, desfile y estela, con love de mentira)
     ├── test_deck.lua     # prueba del paseo por cubierta (geometria, sin ventana)
     └── test_halyard.lua  # prueba de la driza (fisica y geometria, con love de mentira)
 ```
@@ -648,16 +648,48 @@ de seno) en vez de ser una raya de un pixel; el blanco es solo de las
 rompientes, y va suelto, nunca encadenado. Las olas corrientes si se encadenan,
 con hueco y escalonadas, porque una cresta es larga y se rompe a trozos.
 
-### La estela dice lo que hace el barco
+### El mar no puede correr mas que el barco
 
-Detras del casco hay dos cosas y no una. El **remolino de popa** se queda donde
-se solto y se deshace; los **brazos de la V** se abren a un angulo fijo, pero
-proporcionalmente a lo que el barco **anda**, no a lo que tarda. La diferencia
-importa: un barco parado no abre V, uno lanzado la tiene larga, y en una virada
-se dobla sola porque cada punto de la estela guarda su propia derrota. Es la
-lectura que la version anterior no daba — una fila de puntos por la crujia se
-veia igual a dos nudos que a seis, y en una virada dejaba una raya recta que no
-era por donde se habia pasado.
+Un campo de agua que cruza la pantalla mas deprisa que el barco no se lee como
+viento: se lee como que el barco **cia a toda maquina**. Con el barco quieto en
+el centro, la unica velocidad que hay en pantalla es la del mar, y el ojo la
+compara con lo unico que tiene a mano — el casco parado.
+
+Asi que la escala del desfile la pone `Ship.BASE_SPEED`, siete pixeles por
+segundo: la ola desfila hasta siete y la racha hasta catorce (`Sea.WAVE_DRIFT`,
+`Sea.GUST_DRIFT`, atados por la prueba). La racha puede doblar a la ola porque
+es el viento **tocando** la superficie y no la superficie moviendose; mas ya es
+otra vez marcha atras. El vaiven del tren de olas va por el mismo camino: seis
+segundos de respiracion, que es lo que tarda una mar de verdad.
+
+La primera version desfilaba a treinta y uno y las rachas a noventa y seis —
+siete y catorce veces lo que anda el barco. Tenia todo lo demas bien y aun asi
+el mar se veia nervioso, porque el error no estaba en ningun trazo sino en el
+reloj.
+
+### La estela es el bigote de proa, estirado
+
+Vista desde arriba, la estela no es una fila de puntos ni dos brazos rectos:
+son **crestas transversales**, la misma uve que la roda levanta delante, que van
+quedando por popa y abriendose. Asi que no hay dos dibujos, hay uno: el arco,
+en una escalera de cinco anchos (`sea.wake1..5`), sembrado por el espejo de popa
+y elegido por lo lejos que ha quedado.
+
+Lo que decide cada cosa importa y no es lo mismo:
+
+* el **ancho** sale de lo que el barco ha **andado** desde que se solto ese
+  arco, no del reloj. Es la misma cuenta que hace el agua, asi que la uve se
+  abre siempre a los mismos diecinueve grados y en una virada se dobla sola —
+  cada arco se queda en su punto del mundo y es la camara la que gira.
+* lo **larga** que es sale de lo que se corre. A buen andar los arcos viven
+  para recorrer la escalera entera y la estela sale hasta el borde de la
+  pantalla; en el ojo del viento se deshacen en el segundo escalon y no queda
+  mas que un hervor contra el codaste.
+
+Los arcos se pintan **encima del barco**, y son lo unico del mar que lo hace. El
+agua que revuelve la popa esta contra la popa: con la estela debajo del casco
+habia que sembrarla media eslora mas atras para que asomara del espejo, y
+entonces salia despegada del barco, como si la dejara otro.
 
 Delante, la roda: el **bigote de proa** en tres tamanos segun lo que se corra
 —la estela cuenta de donde vienes, el bigote cuanto corres ahora— y unas
@@ -668,7 +700,9 @@ miente, y en el ojo del viento se pasa un buen rato asi.
 
 El bigote es la unica cosa del mar que se dibuja pegada a la pantalla y no al
 mundo, y es legal por la misma razon que el barco: la proa apunta siempre
-arriba, asi que no tiene angulo que elegir.
+arriba, asi que no tiene angulo que elegir. La estela si va en el mundo, pero
+tampoco elige orientacion, y tambien por la proa: una cresta transversal cruza
+la derrota, y la derrota apunta arriba.
 
 ### Puestos
 

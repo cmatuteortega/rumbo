@@ -29,12 +29,16 @@ Los otros dos prueban DIBUJO —viven en pixeles de arte— asi que montan un
 los dos fallos de la driza (doblarse sobre si misma y no estarse quieta en
 reposo) no se ven mirando la pantalla un rato, solo midiendo.
 
-`test_sea.lua` lee que sprite de cada familia se ha usado y donde. Vigila tres
+`test_sea.lua` lee que sprite de cada familia se ha usado y donde. Vigila cuatro
 cosas que tampoco se ven a ojo: que **ni una** llamada pase rotacion (el love
 de mentira peta si alguien lo intenta), que las crestas y las rachas salgan
-siempre a noventa grados y giren con el rumbo, y que con viento flojo haya de
-verdad menos trazos y ninguno blanco. Ademas mide que la V de la estela se abra
-con lo que el barco anda y no con el reloj.
+siempre a noventa grados y giren con el rumbo, que con viento flojo haya de
+verdad menos trazos y ninguno blanco, y que el mar no desfile mas deprisa que lo
+que anda el barco (`Sea.WAVE_DRIFT` y `Sea.GUST_DRIFT` contra
+`Ship.BASE_SPEED`) — a ojo un mar corriendo se lee como viento, y solo con el
+numero delante se ve que lo que dice es que el barco va marcha atras. Ademas
+mide que la estela se abra con lo que el barco anda y no con el reloj, y que se
+quede corta cuando no se corre.
 `test_deck.lua` tambien: `src/art.lua` no llama a `love` hasta que se le pide un
 sprite, asi que la geometria del casco y la reserva de caras se miden sin
 ventana. Esta ahi porque un tripulante que sale por la borda pasa cada varios
@@ -154,7 +158,10 @@ familias van siempre a noventa grados y giran con el rumbo; la fuerza del viento
 —estirada a [0,1] en `Sea.state`, porque el rango del viento es corto— decide
 cuantos trazos hay, como de grandes y si alguno rompe en blanco, y un ruido de
 manchas (`SWELL_CELL`) hace que un trozo de mar este picado y el de al lado
-liso. Con viento flojo quedan cuatro rizos y ni una racha. Los campos que
+liso, y el desfile va atado a `Ship.BASE_SPEED` (`Sea.WAVE_DRIFT`,
+`Sea.GUST_DRIFT`) porque un mar que corre mas que el barco no se lee como viento
+sino como que el barco cia. Con viento flojo quedan cuatro rizos y ni una racha.
+Los campos que
 desfilan (olas, rachas, y las manchas de agua honda) no se reciclan con un
 modulo —eso da un tiron cada vuelta— sino desplazando el punto alrededor del
 cual se barren las celdas. Y los trazos no se pintan segun se recorren: se
@@ -162,11 +169,20 @@ apuntan por sprite y se sueltan al final todos los de uno seguidos, porque con
 treinta y seis sprites entremezclados al azar cada trazo rompia el envio del
 anterior.
 
-La estela son dos cosas: el remolino de popa, que se queda donde se solto, y los
-brazos de la V, que se abren con lo que el barco ANDA (`state.distance`, no el
-reloj) y por eso se doblan solos en una virada. Delante, el bigote de la roda en
-tres tamanos y unas salpicaduras a sotavento; los dos callan por debajo de
-`WORKING`, que es donde un barco deja de levantar agua.
+La estela ES el bigote de la roda, estirado hacia atras: las crestas
+transversales de un barco visto desde arriba son la misma uve, quedando atras y
+abriendose, asi que hay un solo dibujo en una escalera de cinco anchos
+(`sea.wake1..5`). El ancho de cada arco sale de lo que el barco ha ANDADO desde
+que se solto (`state.distance`, no el reloj), asi que la uve se abre siempre al
+mismo angulo y en una virada se dobla sola; lo que decide la VELOCIDAD es cuanto
+llega a durar, y por eso en el ojo del viento no queda mas que un hervor contra
+el codaste. Los arcos son lo unico del mar que se pinta ENCIMA del barco
+(`Sea.drawWake`, que llama `voyage.lua` despues del casco): el agua que revuelve
+la popa esta contra la popa, y con la estela debajo del casco habia que
+sembrarla media eslora mas atras para que asomara, con lo que salia despegada
+del barco. Delante, el bigote de la roda en tres tamanos y unas salpicaduras a
+sotavento; los dos callan por debajo de `WORKING`, que es donde un barco deja de
+levantar agua.
 
 Los mandos que se usan navegando salen tocando SU puesto en cubierta, no de la
 columna de botones, y por eso el timon y el velamen dejan su hoja para el
@@ -239,7 +255,8 @@ que exista el PNG correspondiente en `assets/`, en cuyo caso gana el archivo.
   `Sea.orient`.
 * **Mar**: los trazos en `src/art.lua` (`gen.crest*`), el reparto en
   `drawWaves` de `src/sea.lua` — cuantos hay (`density`), cual sale (`grade`) y
-  como se mueven. La mezcla importa mas que cada trazo: si la ola corriente
+  como se mueven. La velocidad del desfile NO se toca a ojo: sale de
+  `Sea.WAVE_DRIFT`/`Sea.GUST_DRIFT` y se mide contra `Ship.BASE_SPEED`. La mezcla importa mas que cada trazo: si la ola corriente
   lleva color claro, la pantalla se llena de marcas brillantes iguales y el mar
   se lee como LLUVIA. El blanco es solo de las rompientes, y sueltas. Correr
   `tests/test_sea.lua` despues.

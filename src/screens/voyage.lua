@@ -549,6 +549,12 @@ function Voyage.draw()
     love.graphics.scale(Constants.ART, Constants.ART)
     Sea.draw(s)
     drawShip(s)
+    -- La estela va DESPUES del barco, y es lo unico del mar que se pinta por
+    -- encima de el. El agua que revuelve la popa esta contra la popa: con los
+    -- arcos debajo del casco habia que sembrarlos media eslora mas atras para
+    -- que asomaran del espejo, y entonces la estela salia despegada del barco.
+    -- Pisando el codaste, sale de donde tiene que salir.
+    Sea.drawWake(s)
     love.graphics.pop()
 
     -- Capa de interfaz. El timon va justo detras de la cabecera porque es

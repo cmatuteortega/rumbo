@@ -91,13 +91,17 @@ centra en su lienzo.
 
 | id | tamano | archivo |
 |----|--------|---------|
-| `sea.foam` | 3x3 | `assets/sea_foam.png` |
 | `sea.drop` | 2x2 | `assets/sea_drop.png` |
 | `sea.calm` | 56x44 | `assets/sea_calm.png` |
 | `sea.calmet` | 38x30 | `assets/sea_calmet.png` |
 | `sea.bow1` | 9x3 | `assets/sea_bow1.png` |
 | `sea.bow2` | 13x4 | `assets/sea_bow2.png` |
 | `sea.bow3` | 17x5 | `assets/sea_bow3.png` |
+| `sea.wake1` | 23x6 | `assets/sea_wake1.png` |
+| `sea.wake2` | 29x7 | `assets/sea_wake2.png` |
+| `sea.wake3` | 35x8 | `assets/sea_wake3.png` |
+| `sea.wake4` | 41x9 | `assets/sea_wake4.png` |
+| `sea.wake5` | 47x10 | `assets/sea_wake5.png` |
 | `sea.island` | 40x32 | `assets/sea_island.png` |
 | `sea.rock` | 10x8 | `assets/sea_rock.png` |
 | `sea.port` | 32x26 | `assets/sea_port.png` |
@@ -131,10 +135,17 @@ centra en su lienzo.
   llena de marcas claras iguales y el mar deja de parecer agua: parece lluvia.
 * `sea.gust*` — racha de viento. Corre **a favor** del viento, o sea cruzada a
   las crestas, y es lo que ensena de donde sopla.
-* `sea.foam` — el remolino de la estela. `sea.drop` — una gota: brazos de la
-  estela y salpicadura de proa.
+* `sea.drop` — una gota: la salpicadura que la roda dispara a sotavento.
 * `sea.bow1/2/3` — el bigote de la roda, en tres tamanos segun lo que se corra.
   Este **no** gira: va pegado a la pantalla, y la proa apunta siempre arriba.
+* `sea.wake1..5` — **el mismo bigote, para la popa**: la estela son crestas
+  transversales, arcos que van quedando atras y abriendose, y por eso es una
+  escalera de anchos y no un dibujo distinto. Si redibujas el bigote, redibuja
+  estos con la misma mano o el barco tendra dos aguas que no se parecen. Van en
+  **blanco de un pixel**: en pantalla se tinen para apagarse hacia popa, y solo
+  multiplicando por blanco sale el color de la paleta exacto. Tampoco giran, y
+  por la misma razon: una cresta transversal cruza la derrota, y la derrota
+  apunta siempre arriba.
 * `sea.calm`, `sea.calmet` — manchas de agua honda, tramadas. Son la variacion
   grande del fondo; macizas se leen como agujeros.
 * `sea.island`, `sea.rock`, `sea.port` — se dibujan **sin girar** desde

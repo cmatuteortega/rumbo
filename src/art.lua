@@ -407,15 +407,9 @@ function gen.gustStreak(w, h, angle)
     return c
 end
 
-function gen.foam(w, h)
-    local c = newCanvas(w, h)
-    c:disc((w - 1) / 2, (h - 1) / 2, (w - 1) / 2, (h - 1) / 2, Palette.white)
-    return c
-end
-
 function gen.drop(w, h)
-    -- La gota de una salpicadura y el punto de los brazos de la estela. Mas
-    -- pequena que la espuma a proposito: lo que se aleja del casco se deshace.
+    -- La gota que la roda dispara a sotavento. Es lo mas pequeno del mar a
+    -- proposito: lo que se despega del casco se deshace.
     local c = newCanvas(w, h)
     c:rect(0, 0, w, h, Palette.white)
     return c
@@ -439,6 +433,28 @@ end
 
 -- Un solo generador para los tres: el tamano lo pone el registro.
 function gen.bowWave(w, h) return bowWave(w, h) end
+
+-- Arco de estela: el MISMO bigote, pero para la popa y en un solo trazo.
+--
+-- La estela de un barco vista desde arriba no es una fila de puntos: son las
+-- crestas transversales, arcos como el de la roda que van quedando atras y
+-- abriendose. Asi que el bigote no se copio, se ESTIRO: la misma uve, en una
+-- escalera de tamanos, sembrada por el espejo de popa.
+--
+-- Va en blanco puro y de un pixel a proposito. En pantalla se tine con
+-- Palette.white / foam / shallow segun se deshace (foamColor en src/sea.lua),
+-- y multiplicar por blanco devuelve el color de la paleta EXACTO -- que es lo
+-- que permite apagar la espuma sin inventar un color que no esta en ella. Con
+-- el arco a dos tonos como el bigote, la tinta daria un tercer color.
+local function wakeArc(w, h)
+    local c = newCanvas(w, h)
+    local cx = (w - 1) / 2
+    c:line(cx, 0, 0, h - 1, Palette.white)
+    c:line(cx, 0, w - 1, h - 1, Palette.white)
+    return c
+end
+
+function gen.wakeArc(w, h) return wakeArc(w, h) end
 
 -- Mancha de calma: agua honda y lisa, sin rizos encima. El mar de un solo azul
 -- es lo que hace que un fondo plano se lea como papel pintado; estas manchas
@@ -771,13 +787,22 @@ local SPRITES = {
     { "ship.sailsReef", SHIP_W, SHIP_H, "sails_reef1.png", gen.shipSailsReef },
     { "ship.anchor",    SHIP_W, SHIP_H, "anchor1.png",     nil },
 
-    { "sea.foam",         3,  3, "sea_foam.png",        gen.foam },
     { "sea.drop",         2,  2, "sea_drop.png",        gen.drop },
     { "sea.calm",        56, 44, "sea_calm.png",        gen.calmBig },
     { "sea.calmet",      38, 30, "sea_calmet.png",      gen.calmSmall },
     { "sea.bow1",         9,  3, "sea_bow1.png",        gen.bowWave },
     { "sea.bow2",        13,  4, "sea_bow2.png",        gen.bowWave },
     { "sea.bow3",        17,  5, "sea_bow3.png",        gen.bowWave },
+    -- La escalera de la estela. Los anchos suben de seis en seis porque el
+    -- abanico entero (WAKE_SPAN de src/sea.lua) son unos cuarenta y cinco
+    -- pixeles: seis por escalon sobre cinco escalones abren la uve a los
+    -- diecinueve grados de una estela de verdad. El primero mide lo que el
+    -- espejo de popa (26 px de manga ahi atras) para que nazca pegado a el.
+    { "sea.wake1",       23,  6, "sea_wake1.png",       gen.wakeArc },
+    { "sea.wake2",       29,  7, "sea_wake2.png",       gen.wakeArc },
+    { "sea.wake3",       35,  8, "sea_wake3.png",       gen.wakeArc },
+    { "sea.wake4",       41,  9, "sea_wake4.png",       gen.wakeArc },
+    { "sea.wake5",       47, 10, "sea_wake5.png",       gen.wakeArc },
     { "sea.island",      40, 32, "sea_island.png",      gen.island },
     { "sea.rock",        10,  8, "sea_rock.png",        gen.rock },
     { "sea.port",        32, 26, "sea_port.png",        gen.port },

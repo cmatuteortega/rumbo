@@ -21,7 +21,9 @@
 --
 -- El bigote de proa es la excepcion contraria y por eso es facil: va pegado a
 -- la pantalla y no al mundo, y la proa apunta siempre arriba, asi que no tiene
--- angulo que elegir.
+-- angulo que elegir. La estela es el mismo arco sembrado por popa, y tampoco
+-- lo tiene: se queda en su punto del mundo, pero se dibuja siempre derecho,
+-- porque una cresta transversal cruza la derrota y la derrota apunta arriba.
 --
 -- Ademas, nada del mar se guarda: olas, rachas, islas, escollos, estela y
 -- salpicaduras son funcion pura de la posicion del mundo, de la semilla y del
@@ -41,6 +43,22 @@ Sea.SWELL_CELL   = 96   -- tamano de las manchas de mar picado y de mar llano
 Sea.GUST_CELL    = 46
 Sea.CALM_CELL    = 110  -- manchas de agua honda
 Sea.SCENERY_CELL = 250  -- islas y escollos
+
+-- A que velocidad desfila el mar, en pixeles de mundo por segundo: {calma,
+-- lo que suma el viento duro}. Salen fuera porque son la escala del juego y
+-- no un numero de dibujo, y la escala la pone el BARCO: Ship.BASE_SPEED son
+-- siete pixeles por segundo, y una buena singladura anda cuatro y medio.
+--
+-- El mar viejo desfilaba a treinta y uno, y las rachas a noventa y seis. Con
+-- el barco quieto en el centro de la pantalla eso no se lee como viento: se
+-- lee como que el barco va marcha atras a toda maquina. Un campo de agua no
+-- puede correr mas que el barco que lo cruza, o el barco parece anclado.
+--
+-- Las rachas si pueden ir mas deprisa que la ola -- son el viento tocando la
+-- superficie, no la superficie moviendose --, pero el doble es el techo:
+-- tests/test_sea.lua las ata a las dos contra Ship.BASE_SPEED.
+Sea.WAVE_DRIFT = { 1.5, 5.5 }
+Sea.GUST_DRIFT = { 4.0, 10.0 }
 
 --==========================================================================
 -- Camara
@@ -196,33 +214,43 @@ end
 -- Nada de esto se guarda: es adorno, y al volver a la partida el barco aparece
 -- con el mar limpio detras (Sea.reset).
 --
--- La estela son dos cosas distintas y por eso no basta con una fila de puntos:
+-- La estela ES EL BIGOTE DE PROA, estirado hacia atras.
 --
---   * el REMOLINO de popa, que se queda donde se solto y se deshace. Es lo que
---     habia antes, y solo, contaba una mentira: se veia igual a dos nudos que
---     a seis, y en una virada quedaba una raya recta que no era la derrota.
---   * los BRAZOS -- la V de Kelvin --, que se abren detras del barco a un
---     angulo fijo. El angulo es fijo pero la V se abre a lo largo de lo que el
---     barco AVANZA, asi que un barco parado no tiene V, uno rapido la tiene
---     larga, y virando se dobla sola porque cada punto guarda su propia
---     travesia. Eso es lo que hace que la estela diga el rumbo y la velocidad.
+-- Vista desde arriba, la estela de un barco no es una fila de puntos ni dos
+-- brazos rectos: son crestas TRANSVERSALES, la misma uve que la roda levanta
+-- delante, que van quedando por popa y abriendose. Asi que aqui no hay dos
+-- dibujos distintos para la proa y para la popa -- hay uno, el arco, en una
+-- escalera de cinco anchos (sea.wake1..5 en src/art.lua), sembrado por el
+-- espejo de popa y elegido por lo LEJOS que ha quedado.
 --
--- La apertura se mide con state.distance y no con el tiempo a proposito: es la
--- misma cuenta que hace el agua, y sale bien aunque la velocidad cambie a
--- mitad de estela.
+-- Antes eran un remolino de puntos por la crujia mas dos brazos de gotas. Los
+-- puntos se leian como una fila de migas y los brazos, sueltos del arco que
+-- tenian que cerrar, como dos rastros de espuma que no salian de ningun sitio.
+-- Un arco entero se lee de golpe.
+--
+-- Lo que se conserva de aquello es lo unico que importaba: el ancho se elige
+-- con state.distance y no con el reloj, que es la misma cuenta que hace el
+-- agua. Un barco parado no abre estela; uno lanzado la tiene larga y ancha; y
+-- en una virada se dobla sola, porque cada arco se queda en el punto de MUNDO
+-- donde se solto y es la camara la que gira.
+--
+-- Los arcos se pintan ENCIMA del barco (Sea.drawWake, que llama voyage.lua
+-- despues del casco). Es lo que deja que el primero muerda el espejo de popa
+-- en vez de nacer despegado de el: el agua que revuelve la popa esta contra la
+-- popa, y con la estela debajo del casco habia que sembrarla media eslora mas
+-- atras para que asomara.
 
 local wake, spray = {}, {}
-local WAKE_MAX  = 80
+local WAKE_MAX  = 16
 local SPRAY_MAX = 48
-local SEED_STEP = 4      -- un punto de estela cada tantos pixeles de mundo
-local SPREAD    = 0.32   -- tangente del semiangulo de la V
-local ARM_MAX   = 30     -- hasta donde se abren los brazos, en pixeles
--- La estela nace DETRAS del espejo de popa y la salpicadura DELANTE de la
--- roda, y los dos numeros son media eslora larga por una razon que costo
--- verse: sembrados mas cerca del centro quedan debajo del casco, que mide 82
--- pixeles de proa a popa, y a poco andar la estela entera cabe ahi dentro sin
--- asomar. Con viento flojo no se veia ni un punto de espuma.
-local STERN     = 44
+local SEED_STEP = 6      -- un arco de estela cada tantos pixeles de mundo
+local WAKE_SPAN = 45     -- hasta donde llega la estela por popa, en pixeles
+local WAKE_ARCS = 5      -- escalones de la escalera de anchos
+-- La estela nace PISANDO el espejo de popa (el casco mide 82 pixeles de proa a
+-- popa, asi que el espejo cae a 41 del centro) y la salpicadura DELANTE de la
+-- roda. Lo segundo si tiene que salir del casco: las gotas se pintan debajo
+-- del barco, y sembradas mas adentro pasan media vida escondidas.
+local STERN     = 38
 local BOW       = 42
 
 local lastX, lastY, lastDist
@@ -242,19 +270,23 @@ local function shedWake(state, frac)
     lastX, lastY = sx, sy
     table.insert(wake, 1, {
         x = sx, y = sy,
-        -- Estribor del barco EN EL MOMENTO de soltarlo: es lo que hace que los
-        -- brazos se abran sobre la derrota vieja y no sobre el rumbo de ahora.
-        nx = math.cos(state.heading), ny = math.sin(state.heading),
         d = state.distance,
         age = 0,
-        -- Un barco lento deja un remolino corto; uno lanzado, uno largo. El
-        -- numero se midio en pantalla y no en el reloj: la estela tiene que
-        -- durar lo bastante para verse VARIAS ESLORAS por popa, o a media
-        -- singladura no asoma del espejo y el barco parece estar parado.
-        life = 3.5 + 6.5 * frac,
-        -- Los brazos van uno de cada dos: la V son crestas sueltas, no una
-        -- linea, y con todos puestos parecia un embudo pintado.
-        arm = (frac > 0.35) and (#wake % 2 == 0) or false,
+        life = 4 + 8 * frac,
+        -- Hasta donde llega ESTE arco, y es lo unico que la velocidad decide.
+        --
+        -- El ANGULO de la uve no se toca: el escalon se elige por los pixeles
+        -- que ha quedado atras, asi que la estela se abre siempre a los mismos
+        -- diecinueve grados, como en el agua. Lo que cambia con lo que se
+        -- corre es lo LARGA que es: a buen andar los arcos viven para recorrer
+        -- la escalera entera y la uve sale hasta el borde de la pantalla; en el
+        -- ojo del viento se deshacen en el segundo escalon y por popa no queda
+        -- mas que un hervor pegado al codaste.
+        --
+        -- Se congela al soltarlo en vez de leerse del barco al dibujar porque
+        -- si no, aflojar trapo ensancharia de golpe la estela ya sembrada: los
+        -- arcos de atras saltarian de escalon sin haberse movido.
+        reach = WAKE_SPAN * (0.30 + 0.70 * frac),
     })
     while #wake > WAKE_MAX do table.remove(wake) end
 end
@@ -317,11 +349,15 @@ function Sea.update(state, dt)
         shedSpray(state, dt, frac, Sea.state(state))
     end
 
-    -- Envejece SIEMPRE, tambien amarrado: el agua no se para porque tu si.
+    -- Envejece SIEMPRE, tambien amarrado: el agua no se para porque tu si. Un
+    -- arco se va por lo que tarda o por lo lejos que queda, lo que llegue
+    -- antes: parado se deshace solo, y a buen andar se sale del abanico.
     for i = #wake, 1, -1 do
         local p = wake[i]
         p.age = p.age + dt
-        if p.age > p.life then table.remove(wake, i) end
+        if p.age > p.life or state.distance - p.d > p.reach then
+            table.remove(wake, i)
+        end
     end
     for i = #spray, 1, -1 do
         local q = spray[i]
@@ -375,7 +411,7 @@ local function drawWaves(state)
     -- El campo entero desfila a sotavento. No se recicla con un modulo -- eso
     -- da un tiron cada vuelta --: lo que se desplaza es el punto ALREDEDOR del
     -- cual se barren las celdas, asi que el mar avanza sin costura.
-    local drift = state.time * (5 + 26 * sea)
+    local drift = state.time * (Sea.WAVE_DRIFT[1] + Sea.WAVE_DRIFT[2] * sea)
     local ox, oy = tx * drift, ty * drift
     local cell = Sea.WAVE_CELL
     local t = state.time
@@ -409,8 +445,13 @@ local function drawWaves(state)
         -- crestas de una misma linea suben y bajan juntas y las de detras van
         -- un poco despues. Con una fase suelta por ola el mar hierve; con
         -- esta, respira.
+        --
+        -- Respira despacio: a dos radianes por segundo la mar entera subia y
+        -- bajaba tres veces cada diez segundos, que sumado al desfile daba el
+        -- agua nerviosa que se veia antes. La mitad son seis segundos de
+        -- vaiven, que es lo que tarda una mar de verdad.
         local along = wx * tx + wy * ty
-        local surge = math.sin(along * 0.075 - t * (0.9 + 1.1 * sea)) * (0.5 + 2.2 * sea)
+        local surge = math.sin(along * 0.075 - t * (0.45 + 0.55 * sea)) * (0.5 + 2.2 * sea)
 
         local x, y = Sea.project(state,
                                  wx + ox + tx * surge,
@@ -458,7 +499,7 @@ local function drawGusts(state)
     -- Al reves que las crestas: la racha corre A FAVOR del viento, asi que en
     -- pantalla cruza las olas en angulo recto. Es lo que ensena de donde sopla.
     local streak = Sea.screenAngle(state, tx, ty)
-    local drift = state.time * (26 + 70 * sea)
+    local drift = state.time * (Sea.GUST_DRIFT[1] + Sea.GUST_DRIFT[2] * sea)
     local ox, oy = tx * drift, ty * drift
     local cell = Sea.GUST_CELL
 
@@ -497,29 +538,26 @@ local function drawPorts(state)
     end
 end
 
-local function drawWake(state)
+-- La estela, y va PUBLICA porque se pinta fuera de Sea.draw: voyage.lua la
+-- llama despues del casco para que el primer arco pise el espejo de popa.
+function Sea.drawWake(state)
     for _, p in ipairs(wake) do
-        local k = p.age / p.life
-        love.graphics.setColor(foamColor(k))
+        -- Lo lejos que ha quedado este arco, en fraccion del abanico. Se mide
+        -- con lo ANDADO -- que es lo que hace el agua -- y por eso un barco
+        -- parado deja de abrir la estela en el sitio, sin encogerla.
+        local behind = Util.clamp((state.distance - p.d) / WAKE_SPAN, 0, 1)
+
+        -- Se apaga por lo que llegue antes: por haberse acabado su alcance o
+        -- por viejo. Lo segundo es lo unico que deshace la estela de un barco
+        -- que se ha parado, que si no se quedaria clavada en el agua.
+        local k = math.max((state.distance - p.d) / p.reach, p.age / p.life)
+        k = Util.clamp(k, 0, 1)
 
         local x, y = Sea.project(state, p.x, p.y)
-        if onScreen(x, y, 8) then Art.drawCentered("sea.foam", x, y) end
-
-        -- Los brazos se abren a lo que el barco ha andado DESDE que se solto
-        -- este punto, que es lo que hace la V de verdad: fija en angulo,
-        -- larga o corta segun lo que corras.
-        if p.arm then
-            local open = math.min((state.distance - p.d) * SPREAD, ARM_MAX)
-            if open > 2 then
-                for _, s in ipairs({ -1, 1 }) do
-                    local ax, ay = Sea.project(state,
-                                               p.x + p.nx * open * s,
-                                               p.y + p.ny * open * s)
-                    if onScreen(ax, ay, 8) then
-                        Art.drawCentered("sea.drop", ax, ay)
-                    end
-                end
-            end
+        if onScreen(x, y, 28) then
+            love.graphics.setColor(foamColor(k))
+            local step = math.min(math.floor(behind * WAKE_ARCS) + 1, WAKE_ARCS)
+            Art.drawCentered("sea.wake" .. step, x, y)
         end
     end
     love.graphics.setColor(1, 1, 1, 1)
@@ -585,7 +623,6 @@ function Sea.draw(state)
     flushStrokes()
     drawScenery(state)
     drawPorts(state)
-    drawWake(state)
     drawSpray(state)
     drawBowWave(state)
     drawHeadingGuide(state)
