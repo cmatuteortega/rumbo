@@ -494,7 +494,66 @@ end
 -- cobra en tres segundos el mando no es un mando, y si no cobra nunca es que
 -- la pelea no se puede ganar mirando la pantalla.
 
+-- Y CON REFLEJOS, que es la leccion mas cara de todo el mando. Este jugador
+-- reaccionaba en UN CUADRO -- 16 ms -- y ajustar la tension contra el dio un
+-- mando imposible: un pulgar humano tarda unos 250 ms en ver algo y responder,
+-- y medido asi, a 400 ms de reaccion, NUEVE de dieciocho peleas acababan con
+-- la LINEA ROTA y NINGUNA con el pez escapado. El unico modo de fallo era el
+-- que peor se entiende, y estaba calibrado para una maquina.
+--
+-- Asi que aqui abajo el jugador ve la pantalla CON RETRASO y solo se replantea
+-- lo que hace cada tantos cuadros, que es como juega una persona. Cualquier
+-- cambio de TENSE, DANGER, OUT_GAIN o MAX_GAIN tiene que pasar por aqui.
+
 print("== se puede pescar mirando la pantalla ==")
+
+-- Una pelea con los reflejos que se le den: `lag` cuadros entre lo que se
+-- pinta y lo que ve, y `think` cuadros entre decision y decision (nadie
+-- re-decide sesenta veces por segundo).
+local function reflexes(state, rate, lag, think)
+    local mem, held, a, t, now, since = {}, false, 0, 0, 0, 999
+    while t < 90 do
+        local m = mem[#mem - lag]
+        since = since + 1
+        if since >= think then
+            since, now = 0, 0
+            if m and m[1] then
+                if m[3] then now = 0 elseif m[2] then now = rate else now = rate * 0.75 end
+            end
+        end
+        if now > 0 then
+            if not held then Reel.grab(knob(a)); held = true end
+            a = a + now * DT
+            Reel.roll(knob(a))
+        elseif held then Reel.drop(); held = false end
+
+        local ev = Reel.update(DT, true, state)
+        World.step(state, DT)
+        frame(state)
+        t = t + DT
+        local x, gold = fish()
+        mem[#mem + 1] = { x ~= nil, gold, alarmed() }
+        if #mem > 300 then table.remove(mem, 1) end
+        if ev then if held then Reel.drop() end return ev.kind, t end
+    end
+    if held then Reel.drop() end
+    return "timeout", t
+end
+
+local function bunch(rate, lag, think, seeds)
+    local out, sum, n = { catch = 0, snap = 0, gone = 0, timeout = 0 }, 0, 0
+    for seed = 200, 200 + seeds - 1 do
+        local state = sea(seed)
+        if bite(state) then
+            local kind, t = reflexes(state, rate, lag, think)
+            out[kind] = (out[kind] or 0) + 1
+            if kind == "catch" then sum = sum + t; n = n + 1 end
+        end
+    end
+    out.mean = (n > 0) and (sum / n) or 0
+    return out
+end
+
 do
     local RATE = 3.5      -- radianes por segundo: un pulgar rodando con ganas
 
@@ -534,6 +593,26 @@ do
     check("y la pelea dura lo que tiene que durar", mean > 6 and mean < 30,
           string.format("media %.1f s, la peor %.1f s", mean, worst))
     print(string.format("       [media %.1f s, la peor %.1f s]", mean, worst))
+
+    -- Lo que se pide con reflejos de persona NO es que gane siempre: es que
+    -- cuando pierda, pierda por lo que se entiende. Que el pez se ESCAPE se
+    -- explica solo -- no lo tuviste donde tenias que tenerlo -- y que la LINEA
+    -- SE ROMPA es el castigo por empenarse en tirar donde no se puede, asi que
+    -- tiene que ser raro en quien juega normal. Y sobre todo: la falta de
+    -- atencion se paga en TIEMPO, no en la pieza, que es lo que toca en un idle.
+    local ok = bunch(RATE, 15, 9, 8)      -- 250 ms: un pulgar normal
+    local meh = bunch(2.4, 24, 20, 8)     -- distraido y con la mano floja
+
+    check("con reflejos de persona se pesca", ok.catch >= 7,
+          string.format("%d de 8 (rotas %d, escapadas %d)", ok.catch, ok.snap, ok.gone))
+    check("y la linea casi nunca se le rompe", ok.snap <= 1,
+          string.format("%d roturas de 8", ok.snap))
+    check("y estar distraido cuesta TIEMPO, no la pieza",
+          meh.catch >= 6 and meh.mean > ok.mean,
+          string.format("distraido %d de 8 en %.1f s; atento %d de 8 en %.1f s",
+                        meh.catch, meh.mean, ok.catch, ok.mean))
+    print(string.format("       [atento %d/8 en %.1f s | distraido %d/8 en %.1f s]",
+          ok.catch, ok.mean, meh.catch, meh.mean))
 
     -- Y no de casualidad: rodar en el momento que toca tiene que ganarle a
     -- rodar siempre, que es lo que separa el mando de un boton.
