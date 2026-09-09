@@ -74,13 +74,7 @@ y no pasa nada mas. El arranque las lista en consola con `falta ->`.
 | `sea.island` | 40x32 | `assets/sea_island.png` |
 | `sea.rock` | 10x8 | `assets/sea_rock.png` |
 | `sea.port` | 32x26 | `assets/sea_port.png` |
-| `crew.helm` | 8x10 | `assets/crew_helm.png` |
-| `crew.sail` | 8x10 | `assets/crew_sail.png` |
-| `crew.net` | 8x10 | `assets/crew_net.png` |
-| `crew.cook` | 8x10 | `assets/crew_cook.png` |
-| `crew.wright` | 8x10 | `assets/crew_wright.png` |
-| `crew.watch` | 8x10 | `assets/crew_watch.png` |
-| `crew.hold` | 8x10 | `assets/crew_hold.png` |
+| `crew.pj01` .. `crew.pj14` | 8x8 | `assets/crew_pj01.png` .. `crew_pj14.png` |
 | `icon.coin` | 11x11 | `assets/icon_coin.png` |
 | `icon.fish` | 11x11 | `assets/icon_fish.png` |
 | `icon.wood` | 11x11 | `assets/icon_wood.png` |
@@ -109,8 +103,22 @@ y no pasa nada mas. El arranque las lista en consola con `falta ->`.
 * `sea.foam` — un punto de estela.
 * `sea.island`, `sea.rock`, `sea.port` — se dibujan **sin girar** desde
   cualquier rumbo, asi que evita formas con una direccion clara.
-* `crew.*` — tripulante en cenital, uno por gremio (siete). Muy pequenos:
-  silueta y un color, poco mas.
+* `crew.pjNN` — la **reserva de caras**: tripulantes en cenital, catorce, y ni
+  uno atado a un gremio. A cada tripulante le toca la que diga el hash de su
+  nombre (`Crew.face`), asi que el gaviero de tu partida tiene siempre la misma
+  cara y no la cambia al mudarlo de puesto.
+
+  Antes habia siete, una por gremio, y el color decia el oficio. Ya no hace
+  falta: el oficio se lee por DONDE esta plantado el tripulante en cubierta, y
+  lo que no se leia era quien es cada uno.
+
+  Son ocho por ocho y se ven de cerca —el barco se dibuja a escala 5— asi que
+  aqui si merece la pena gastar pixeles en un gorro o una barba: es lo unico que
+  distingue a una persona de otra. Estan pensadas para verse **derechas**: la
+  camara va con el barco y estas no giran, como todo lo demas.
+
+  Para meter una mas hay que subir `Crew.FACES` en `src/crew.lua`; `src/art.lua`
+  las registra en bucle contra esa constante y no hay lista que tocar.
 * `icon.*` — iconos del HUD y de los menus.
 * `icon.chart` — abre la carta de marear.
 * `icon.hold` — bodega; tambien es el icono de la barra de carga del HUD.
