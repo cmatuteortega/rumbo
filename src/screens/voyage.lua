@@ -376,7 +376,7 @@ function Voyage.enter()
     Helm.reset()
     Halyard.reset()
     Reel.reset()
-    Sea.clearWake()
+    Sea.reset()
     if Session.offline then
         sheet:show("offline", 460)
     end
@@ -385,7 +385,7 @@ end
 function Voyage.update(dt)
     local s = state()
     World.advance(s, dt)
-    Sea.updateWake(s, dt)
+    Sea.update(s, dt)
     Session.update(dt)
     sheet:update(dt)
     Helm.update(dt, wheel)
@@ -611,7 +611,7 @@ function Voyage.draw()
             end
             if UI.button(rx, row2, bw, bh, "Zarpar", { tone = Palette.gold }) then
                 World.undock(s)
-                Sea.clearWake()
+                Sea.reset()
             end
         elseif port then
             if UI.button(rx, row1, bw, bh, "Atracar",

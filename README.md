@@ -19,8 +19,10 @@ faltan dos por dibujar (la bodega y el trapo arrizado).
 ## Ejecutar
 
 ```sh
-love .                      # desde la raiz del proyecto
-lua5.1 tests/test_sim.lua   # prueba de la simulacion, sin ventana
+love .                        # desde la raiz del proyecto
+lua5.1 tests/test_sim.lua     # prueba de la simulacion, sin ventana
+lua5.1 tests/test_halyard.lua # la driza: fisica y geometria
+lua5.1 tests/test_sea.lua     # el mar: orientacion, calma y estela
 ```
 
 Teclas: `F11` / `alt+enter` pantalla completa, `esc` cierra la hoja abierta,
@@ -55,18 +57,29 @@ La proa apunta siempre hacia arriba de la pantalla, el barco se dibuja quieto en
 el centro y lo que gira es el mar (`Sea.project`). Cambiar de rumbo no gira el
 barco: gira el mundo.
 
-Y de ahi sale la segunda: **nada del mundo puede tener una orientacion que se
-note**. Las olas son trazos, las islas manchas y los puertos manchas con un
-fanal; todos se leen igual desde cualquier demora. Si algun dia hay otro barco
-en el mar, o se dibuja en ocho rumbos, o rompe la regla.
+Y de ahi sale la segunda: **lo del mundo que tenga orientacion hay que
+dibujarlo, no rotarlo**. Las islas son manchas y los puertos manchas con un
+fanal; se leen igual desde cualquier demora y por eso les basta un sprite. Si
+algun dia hay otro barco en el mar, o se dibuja en varios rumbos, o rompe la
+regla.
 
-Las excepciones son cuatro —la rosa del timon (`src/compass.lua`), la rueda del
-timon (`src/helm.lua`), la driza del velamen (`src/halyard.lua`) y la carta de
-marear (`src/screens/chart.lua`)— y las cuatro son legales por la misma razon:
-**no usan sprites**. Sus agujas, cabillas, cuerda, puntos y derrotas se pintan
-con rectangulos de 1x1, asi que apuntan a cualquier angulo sin muestrear nada.
-La rueda y la driza pintan los suyos ademas dentro del `scale()` del mundo, asi
-que su madera y su cuerda tienen el mismo grano que el casco.
+Las **crestas del mar** son el caso que si tiene orientacion, y se resuelve por
+la primera salida: un sprite por angulo. El oleaje se peina contra el viento,
+asi que va en diagonal cuando el viento va en diagonal, y cada trazo esta
+generado **doce veces**, uno cada quince grados; `src/sea.lua` mira a que angulo
+cae el viento en pantalla y pide el que toca (`Sea.orient`). Doce y no ocho
+porque con ocho, a este tamano de pixel, se ve saltar el mar entero al virar.
+Cuesta treinta y seis sprites de nada y no cuesta ni un fotograma: son sprites
+ya hechos, no lineas trazadas en vivo.
+
+Las excepciones que van por la OTRA salida son cinco —la rosa del timon
+(`src/compass.lua`), la rueda del timon (`src/helm.lua`), la driza del velamen
+(`src/halyard.lua`), el redal de las redes (`src/reel.lua`) y la carta de marear
+(`src/screens/chart.lua`)— y las cinco son legales por la misma razon: **no usan
+sprites**. Sus agujas, cabillas, cuerda, cana, puntos y derrotas se pintan con
+rectangulos de 1x1, asi que apuntan a cualquier angulo sin muestrear nada. La
+rueda, la driza y el redal pintan los suyos ademas dentro del `scale()` del
+mundo, asi que su madera y su cuerda tienen el mismo grano que el casco.
 
 La carta ademas es la unica pantalla con el **norte arriba**. La travesia lleva
 la camara solidaria a la proa porque es lo que ves desde cubierta; una carta es
@@ -88,8 +101,9 @@ recortar mar, el camino no es este numero sino redibujar los PNG mas grandes.
 
 **3. Nada del mar se guarda.** Olas, rachas, islas, escollos, puertos, precios y
 la gente de las tabernas son funcion pura de la posicion, la semilla y el
-tiempo, via `Util.hash01`. El mar es infinito y la partida guardada ocupa un
-kilobyte.
+tiempo, via `Util.hash01`. La estela y las salpicaduras tampoco: son adorno, y
+al volver a la partida el barco aparece con el mar limpio detras. El mar es
+infinito y la partida guardada ocupa un kilobyte.
 
 ---
 
@@ -137,7 +151,7 @@ rumbo/
 │   ├── stations.lua      # los seis puestos de cubierta
 │   ├── crew.lua          # tripulantes
 │   ├── ports.lua         # puertos, precios, tabernas
-│   ├── sea.lua           # camara y dibujo del mar
+│   ├── sea.lua           # camara, oleaje, estela y salpicaduras
 │   ├── compass.lua       # la rosa del timon, centrada en la cabecera
 │   ├── helm.lua          # la rueda del timon: un cuarto en la esquina de estribor
 │   ├── halyard.lua      # la driza del velamen: la cuerda de babor, con fisicas
@@ -151,7 +165,8 @@ rumbo/
 │       └── chart.lua     # carta de marear: rumbo a un puerto descubierto
 └── tests/
     ├── test_sim.lua      # prueba headless de la simulacion
-    └── test_halyard.lua  # prueba de la driza (fisica y geometria, con love de mentira)
+    ├── test_halyard.lua  # prueba de la driza (fisica y geometria, con love de mentira)
+    └── test_sea.lua      # prueba del mar (orientacion y estela, con love de mentira)
 ```
 
 **El corte importante es simulacion / dibujo.** `world.lua`, `ship.lua`,
@@ -594,6 +609,61 @@ importa es el angulo entre el rumbo y el viento (`Ship.pointing`):
 El pico esta en el traves, no en popa, que es como navega un barco de vela de
 verdad; es lo que convierte "elegir rumbo" en una decision y no en un adorno.
 
+### El mar lo cuenta todo
+
+El viento no tiene barra. Se lee **en el agua**, y esa es la mitad del trabajo
+del mar de `src/sea.lua`.
+
+Las **crestas se peinan contra el viento** y las **rachas corren a favor**, asi
+que las dos familias salen siempre a noventa grados una de otra: mires donde
+mires, el mar dice de donde sopla, y al virar se repeina entero porque lo que
+gira es el mundo. Y como el mar entero desfila a sotavento, tambien dice **hacia
+donde** va. El desfile no se recicla con un modulo —eso daba un tiron cada
+vuelta, que es lo que hacia el mar viejo con las rachas— sino corriendo el punto
+alrededor del cual se barren las celdas: asi el campo avanza sin costura.
+
+La **fuerza** decide el resto. El viento sopla entre 0,55 y 1,0, que como fuerza
+de mar es un rango corto, asi que se estira a [0, 1] (`Sea.state`) para que la
+calma sea calma de verdad. Con poco viento quedan cuatro rizos sueltos, ninguno
+blanco y ni una racha en la pantalla; con viento fresco el mar se llena, el
+oleaje crece y aparecen las rompientes. Un ruido de manchas por encima
+(`SWELL_CELL`) hace que un trozo de mar este picado y el de al lado casi liso,
+que es lo que separa un oleaje de un papel pintado de olas — y las manchas de
+agua honda, tramadas y sin espuma encima, son la variacion grande, la que se ve
+venir desde lejos.
+
+Todo esto costo una leccion que merece quedar escrita: **un mar de marcas claras
+iguales se lee como lluvia**, no como agua. La primera version tenia razon en
+todo —crestas orientadas, olas en diagonal, calma con poco viento— y con el
+viento por el traves, que es cuando las crestas caen verticales en pantalla,
+parecia un chaparron. Lo que lo arregla es la mezcla: el rizo y la ola corriente
+son **oscuros**, casi sin contraste, y tienen grosor (dos filas de cresta y una
+de seno) en vez de ser una raya de un pixel; el blanco es solo de las
+rompientes, y va suelto, nunca encadenado. Las olas corrientes si se encadenan,
+con hueco y escalonadas, porque una cresta es larga y se rompe a trozos.
+
+### La estela dice lo que hace el barco
+
+Detras del casco hay dos cosas y no una. El **remolino de popa** se queda donde
+se solto y se deshace; los **brazos de la V** se abren a un angulo fijo, pero
+proporcionalmente a lo que el barco **anda**, no a lo que tarda. La diferencia
+importa: un barco parado no abre V, uno lanzado la tiene larga, y en una virada
+se dobla sola porque cada punto de la estela guarda su propia derrota. Es la
+lectura que la version anterior no daba — una fila de puntos por la crujia se
+veia igual a dos nudos que a seis, y en una virada dejaba una raya recta que no
+era por donde se habia pasado.
+
+Delante, la roda: el **bigote de proa** en tres tamanos segun lo que se corra
+—la estela cuenta de donde vienes, el bigote cuanto corres ahora— y unas
+**salpicaduras** que salen a pulsos, no a chorro, y sobre todo por la banda de
+**sotavento**, que es hacia donde tumba el viento. Las dos cosas callan por
+debajo de un tercio de andar: un barco que apenas se mueve con espuma en la proa
+miente, y en el ojo del viento se pasa un buen rato asi.
+
+El bigote es la unica cosa del mar que se dibuja pegada a la pantalla y no al
+mundo, y es legal por la misma razon que el barco: la proa apunta siempre
+arriba, asi que no tiene angulo que elegir.
+
 ### Puestos
 
 Siete, en `src/stations.lua`. Cada uno tiene un gremio, plazas (crecen cada dos
@@ -753,9 +823,13 @@ Esto es andamiaje. Lo que esta pensado pero no hecho:
 
 * **Sonido** — no hay `audio_manager` todavia.
 * **Tiempo y averias** — el viento rola pero no hay temporales; el casco se
-  desgasta a ritmo fijo. El gancho esta en `Ship.rates().wear`.
+  desgasta a ritmo fijo. El gancho esta en `Ship.rates().wear`, y el mar ya
+  sabe ponerse feo: todo el oleaje cuelga de `Sea.state`, que hoy solo lee la
+  fuerza del viento.
 * **Encuentros en el mar** — no hay otros barcos. Cuando los haya, hay que
-  resolver la regla 1 (o ocho rumbos por barco, o dibujarlos con `pixelart`).
+  resolver la regla 1: la salida ya esta hecha y probada en el mar, que genera
+  doce orientaciones de cada trazo (`SEA_DIRS` en `src/art.lua`); un barco pide
+  lo mismo con mas pixeles.
 * **Comercio real** — hoy solo se vende pescado. La bodega ya tiene capacidad;
   faltan mercancias que valgan distinto en cada puerto.
 * **Las islas no hacen nada** — son decorado. No hay colision ni interaccion:
