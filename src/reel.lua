@@ -128,7 +128,7 @@ local POS_PER_RAD = 0.06
 
 -- La carrera del pez, en radianes de carrete por segundo: es el reposo del
 -- carrete, no el cero. 1,67 son diez segundos de cana entera si no se toca.
-local RUN = 1.67
+local RUN = 2.05
 
 -- Lo rapido que el carrete suelto se relaja hacia la carrera del pez. Es lo
 -- que deja que soltar rodando fuerte regale unas decimas antes de que el pez
@@ -145,12 +145,33 @@ local BRIO, BRIO_EVERY = 0.35, 1.7
 -- lee como que la banda se ha movido sino como que hay otra banda. Y llega
 -- EXACTA, por interpolacion con un parametro acotado, en vez de acercarse
 -- para siempre: una banda que deriva medio pixel repinta su sello entero.
-local SEG_EVERY, SEG_SLIDE = 2.6, 0.20
+-- La banda se mueve mas a menudo desde que el pez cuenta por su cuerpo: lo que
+-- se perdio de precision se recupera en RITMO, que ademas es mejor sitio para
+-- ponerlo. Apurar el canto de la banda era una pelea de pixeles; llegar a la
+-- banda antes de que se vaya es una pelea de tiempo, y esa se juega mirando.
+local SEG_EVERY, SEG_SLIDE = 2.2, 0.20
 
 -- Medio ancho de la banda: fijo mas lo que da el puesto de Redes. Es la unica
 -- forma en la que mejorar Redes se nota en el mando, y es la que toca: un
 -- buen pescador no tira mas fuerte, sabe cuando el pez aguanta.
-local SEG_HALF, SEG_HALF_PER = 0.11, 0.010
+local SEG_HALF, SEG_HALF_PER = 0.035, 0.006
+
+-- LO ANCHO QUE ES EL PEZ, en pixeles de arte, y va aqui repetido a proposito:
+-- tiene que ser el ancho de la silueta de `FISH`, que se dibuja mas abajo, y
+-- si una cambia sin la otra la prueba lo canta (mide el pez dibujado y compara).
+--
+-- Hace falta porque el pez CUENTA COMO DENTRO DE LA BANDA CUANDO SU CUERPO LA
+-- TOCA, y no cuando su centro cae dentro. Medir por el centro era una mentira
+-- de las que este juego no se permite: el pez mide once pixeles de arte y la
+-- banda veinte, asi que con el centro justo en el canto de la banda el pez se
+-- ve METIDO EN ELLA hasta la mitad -- y sin embargo no se ponia de oro y la
+-- cana se tensaba. Cinco pixeles y medio de "parece que si y el juego dice que
+-- no" a cada lado, que es exactamente el sitio donde se pelea.
+--
+-- Contando por el cuerpo, "el pez esta en la banda" quiere decir lo que
+-- cualquiera diria mirandolo. Sale mas indulgente, y eso se paga donde toca
+-- (ver SEG_EVERY) y no dejando el mando diciendo una cosa y haciendo otra.
+local FISH_W = 11
 
 -- EL FRENO DEL CARRETE, y no es un adorno: es lo que evita que el mando se
 -- gane rodando como un poseso, que es la estrategia degenerada de todo lo que
@@ -177,11 +198,28 @@ local MAX_GAIN = 2.5
 -- resbalando. FURY acota lo primero para que la cana llegue a combarse antes
 -- de que la linea se rompa, o sea para que haya aviso; el resbale no lo
 -- necesita, porque solo se llega a el pasandose a proposito.
-local TENSE, SLACKEN, FURY, SLIP = 0.30, 0.5, 3, 0.25
+local TENSE, SLACKEN, FURY, SLIP = 0.60, 0.30, 3, 0.25
 
 -- A partir de aqui el sedal se pinta en rojo. Va antes de la mitad de camino
 -- a proposito: el aviso tiene que llegar con tiempo de soltar.
-local DANGER = 0.55
+local DANGER = 0.62
+
+-- LA CEDIDA: lo que se lleva cortar una arrancada a tiempo.
+--
+-- Sin esto la pelea no tenia jugada buena, solo jugada correcta: rodar cuando
+-- toca y soltar cuando toca, siempre al mismo precio. Ahora si el pez entra en
+-- la banda HUYENDO -- o sea cortandole una carrera, no cogiendolo parado -- y
+-- se recoge de verdad en las decimas siguientes, el pez CEDE unos segundos:
+-- tira mucho menos y el freno aguanta mas, asi que se le gana un buen trecho.
+-- Es lo que pasa de verdad cuando un pez deja de pelear, y es lo que convierte
+-- estar atento en algo que se cobra.
+--
+-- REACT es la ventana desde que entra, YIELD lo que dura la cedida, YIELD_RUN
+-- lo que le queda de carrera al empezar a ceder y YIELD_HAUL cuanto mas
+-- aguanta el freno mientras cede. La cedida se va DESVANECIENDO en vez de
+-- apagarse de golpe: el pez se recupera, no se le acaba la pila.
+local REACT, YIELD = 0.35, 1.4
+local YIELD_RUN, YIELD_HAUL = 0.50, 1.30
 
 -- Entre pique y pique. El minimo no es cero porque un pique inmediato al
 -- sacar el redal se lee como que el juego lo estaba esperando.
@@ -245,6 +283,7 @@ local pos, spin, angle = 0, 0, 0
 local tension, jolt = 0, 0
 local slack = 1               -- 1 = sedal flojo, 0 = tenso
 local seg, segFrom, segTo, segT, segKey = START, START, START, 1, nil
+local inband, react, yield = false, 0, 0   -- la cedida (ver REACT/YIELD)
 local finger, crank = nil, 0  -- angulo del dedo y radianes que ha rodado sin gastar
 local pending = nil           -- suceso que devolver en el update de este cuadro
 
@@ -286,11 +325,28 @@ local function track()
 end
 
 -- Un punto de la cana a `s` pixeles de la punta, con la comba y con lo que le
--- falte por subir. La comba es un solo arco, cero en los dos extremos: la
--- cana se dobla en medio y no en el puno ni en la punta.
+-- falte por subir.
+--
+-- LA COMBA ES LA DE UNA VIGA EMPOTRADA, no la de una cuerda, y la diferencia
+-- se ve entera. Fue `sin(pi*t)` -- un arco con cero en los dos extremos -- y
+-- eso comba el CENTRO de la cana dejando la punta clavada en el eje, que es lo
+-- que hace un cabo tendido entre dos puntos, no una cana. Una cana esta
+-- empotrada en el carrete y libre por la punta: el pez tira de la punta, la
+-- punta es la que baja y el arranque sale RECTO del puno porque ahi la sujeta
+-- la mano.
+--
+-- Asi que la flecha es la del voladizo con la carga en el extremo,
+-- normalizada a 1 en la punta:
+--
+--     f(u) = u^2 * (3 - u) / 2,   u = 0 en el puno, 1 en la punta
+--
+-- que sale con tangente horizontal en el empotramiento (f'(0) = 0) y va
+-- ganando pendiente hasta la punta. Eso es lo que se lee como una cana
+-- doblandose y aguantando: la punta intenta bajar y la cana se resiste.
 local function rodAt(s, bow, lift)
     local tx, ty, ux, uy, d = axis()
-    local arch = math.sin(math.pi * Util.clamp(s / d, 0, 1)) * bow
+    local u = 1 - Util.clamp(s / d, 0, 1)
+    local arch = u * u * (3 - u) / 2 * bow
     return tx + ux * s - uy * arch, ty + uy * s + ux * arch + lift
 end
 
@@ -319,6 +375,7 @@ function Reel.reset()
     pos, spin, angle = 0, 0, 0
     tension, jolt, slack = 0, 0, 1
     seg, segFrom, segTo, segT, segKey = START, START, START, 1, nil
+    inband, react, yield = false, 0, 0
     finger, crank = nil, 0
 end
 
@@ -347,6 +404,13 @@ end
 
 function Reel.segHalf(state)
     return math.min(0.28, SEG_HALF + SEG_HALF_PER * Ship.power(state, "nets"))
+end
+
+-- Si el pez esta EN la banda, contando por su cuerpo y no por su centro (ver
+-- FISH_W). Es la misma cuenta que decide el oro y la que decide si tensa, asi
+-- que lo que se ve y lo que pasa no pueden separarse.
+local function inBand(state)
+    return math.abs(pos - seg) <= Reel.segHalf(state) + (FISH_W / 2) / track()
 end
 
 -- POR QUE no se puede pescar ahora mismo, o nil si se puede. Devuelve el
@@ -416,8 +480,17 @@ end
 
 -- Un paso de la pelea. El carrete es lo unico con inercia; todo lo demas
 -- (banda, tension, comba) se deriva de donde esta el pez.
+-- Lo que le queda de pelea al pez mientras cede: YIELD_RUN al empezar y 1 al
+-- recuperarse del todo. Se desvanece en vez de apagarse de golpe.
+local function ease()
+    if yield <= 0 then return 1 end
+    return 1 - (1 - YIELD_RUN) * (yield / YIELD)
+end
+
 local function step(state, rate)
-    local r = runRate(state)
+    local base = runRate(state)
+    local give = ease()
+    local r = base * give
     local slip = 0
 
     if finger then
@@ -425,10 +498,14 @@ local function step(state, rate)
         -- no empezar de cero. Quedarse quieto con el dedo encima pierde sedal.
         -- Y pasado el freno, la bobina resbala: lo que sobra no viene en pez,
         -- se queda en la linea.
+        -- Mientras el pez cede el freno aguanta mas, porque no hay nada
+        -- tirando del otro lado: es lo que hace que la cedida se NOTE en
+        -- recorrido y no solo en que el pez pese menos.
+        local cap = MAX_GAIN * (1 + (YIELD_HAUL - 1) * (1 - give) / (1 - YIELD_RUN))
         local drive = rate - r
-        if drive > MAX_GAIN then
-            slip = drive - MAX_GAIN
-            drive = MAX_GAIN
+        if drive > cap then
+            slip = drive - cap
+            drive = cap
         end
         spin = drive
     else
@@ -444,15 +521,31 @@ local function step(state, rate)
     -- Rodar con el pez fuera de la banda tensa; el resto del tiempo la linea
     -- se afloja sola. La tension se cuenta contra la carrera del pez para que
     -- un pez brioso no perdone mas que uno flojo.
-    if spin > 0 and math.abs(pos - seg) > Reel.segHalf(state) then
-        tension = tension + math.min(FURY, spin / r) * TENSE * FIXED
+    -- LA CEDIDA. El pez tiene que entrar en la banda HUYENDO -- cortandole una
+    -- carrera y no cogiendolo parado -- y hay que recoger de verdad en las
+    -- decimas siguientes. Premia estar mirando, que es justo lo que este mando
+    -- pide y lo unico que no se cobraba.
+    local inside = inBand(state)
+    if inside and not inband and spin < 0 then react = REACT end
+    inband = inside
+    if react > 0 then
+        react = react - FIXED
+        if spin >= MAX_GAIN * 0.6 then react, yield = 0, YIELD end
+    end
+    if yield > 0 then yield = math.max(0, yield - FIXED) end
+
+    -- La tension se normaliza contra la carrera ENTERA del pez y no contra la
+    -- que le queda cediendo: si no, un pez rendido -- que tira menos -- haria
+    -- que el mismo tiron contara como mas fuerza, que es justo al reves.
+    if spin > 0 and not inside then
+        tension = tension + math.min(FURY, spin / base) * TENSE * FIXED
     elseif slip <= 0 then
         tension = math.max(0, tension - SLACKEN * FIXED)
     end
 
     -- El freno resbalando tensa este dentro o fuera de la banda: la banda dice
     -- lo que el pez aguanta que se tire de el, no lo que aguanta el aparejo.
-    if slip > 0 then tension = tension + slip / r * SLIP * FIXED end
+    if slip > 0 then tension = tension + slip / base * SLIP * FIXED end
 end
 
 --==========================================================================
@@ -651,17 +744,25 @@ local FISH = {
     "...####..##",
 }
 
-local function silhouette(cx, cy, color)
+-- `turned` pinta el pez VUELTO, con el morro a estribor. Es como se ve que ha
+-- cedido: un pez que deja de pelear deja de encarar el mar y viene de cabeza
+-- al barco. No es rotar nada -- se invierten las columnas de la silueta -- asi
+-- que sigue dentro de la regla de "nada girado", y es la unica senal de la
+-- cedida: ni color nuevo ni numero, la postura del propio pez.
+local function silhouette(cx, cy, color, turned)
     love.graphics.setColor(color)
+    local w = #FISH[1]
     for row = 1, #FISH do
         local line = FISH[row]
         local y = cy + row - 3
         local run = nil
-        for col = 1, #line + 1 do
+        for col = 1, w + 1 do
             local on = line:sub(col, col) == "#"
             if on and not run then run = col end
             if not on and run then
-                love.graphics.rectangle("fill", cx + run - 6, y, col - run, 1)
+                local x = turned and (cx + w + 1 - col - w / 2)
+                                 or (cx + run - 1 - w / 2)
+                love.graphics.rectangle("fill", math.floor(x), y, col - run, 1)
                 run = nil
             end
         end
@@ -782,13 +883,13 @@ function Reel.draw(state)
     if hooked then
         local fx, fy = rodAt(Util.clamp(pos, 0, 1) * len, bow, lift)
         fx, fy = math.floor(fx), math.floor(fy)
+        local turned = yield > 0
         -- El contorno, engordado a los cuatro lados con la propia silueta.
-        silhouette(fx - 1, fy, Palette.ink)
-        silhouette(fx + 1, fy, Palette.ink)
-        silhouette(fx, fy - 1, Palette.ink)
-        silhouette(fx, fy + 1, Palette.ink)
-        silhouette(fx, fy,
-                   (math.abs(pos - seg) <= half) and Palette.gold or Palette.white)
+        silhouette(fx - 1, fy, Palette.ink, turned)
+        silhouette(fx + 1, fy, Palette.ink, turned)
+        silhouette(fx, fy - 1, Palette.ink, turned)
+        silhouette(fx, fy + 1, Palette.ink, turned)
+        silhouette(fx, fy, inBand(state) and Palette.gold or Palette.white, turned)
     end
 
     love.graphics.pop()

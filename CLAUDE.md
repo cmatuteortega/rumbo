@@ -166,8 +166,23 @@ agarrando no es una pausa) y al soltar el carrete se queda con el giro que
 llevaba y se relaja hacia la carrera, que es como se escapa. Sobre la cana hay
 una BANDA que cambia de sitio cada pocos segundos: rodar con el pez dentro es
 gratis y rodar fuera tensa la linea, y de ahi salen las dos maniobras del mando
---atraer y dejarlo ir--. La tension no tiene barra: la cana se COMBA, y el
-sedal se pone rojo antes de romperse. Y el carrete tiene FRENO (`MAX_GAIN`):
+--atraer y dejarlo ir--. DENTRO se cuenta por el CUERPO del pez y no por su
+centro (`FISH_W`): midiendo por el centro, un pez metido en la banda hasta la
+mitad no se ponia de oro y tensaba igual, que es medio pez de "parece que si y
+el juego dice que no" justo donde se pelea. Y hay CEDIDA: si el pez entra en la
+banda huyendo -- cortandole una carrera, no cogiendolo parado -- y se recoge de
+verdad en las decimas siguientes (`REACT`), cede unos segundos: tira la mitad,
+el freno aguanta mas y se le gana casi un 50% mas de terreno. Se ve porque el
+pez SE VUELVE, de morro al carrete: ni color nuevo ni numero, la postura del
+propio pez. Es lo unico de la pelea que paga por estar mirando.
+
+La tension no tiene barra: la cana se COMBA, y el sedal se pone rojo antes de
+romperse. La comba es la de una VIGA EMPOTRADA y no la de una cuerda: fue
+`sin(pi*t)` -- que dobla el centro y deja la punta clavada en el eje, o sea un
+cabo tendido -- y ahora es la flecha del voladizo `u^2*(3-u)/2`, que sale recta
+del puno y baja del todo en la punta. Es lo que se lee como una cana
+resistiendose, y es lo que hace una cana de verdad: la sujeta la mano por el
+puno y tira el pez de la punta. Y el carrete tiene FRENO (`MAX_GAIN`):
 pasado el tope la bobina resbala, el pez no viene mas rapido y solo se tensa la
 linea, que es lo unico que impide que el mando se gane barriendo el pulgar --
 la prueba lo midio antes de que existiera el freno y decia ocho de ocho.
@@ -223,9 +238,16 @@ que exista el PNG correspondiente en `assets/`, en cuyo caso gana el archivo.
   `draw`, `press`, `move`, `release`, `keypressed`, `resize`) y alta en el
   `ScreenManager.init` de `main.lua`.
 * **Pesca**: la pelea entera esta en las constantes de la cabecera de
-  `src/reel.lua` (`MAX_GAIN`, `RUN`, `TENSE`, `SEG_*`, `FISH_*`). Correr
-  `tests/test_reel.lua` despues: lo que hay que mirar no es que pase, es lo que
-  imprime -- cuantos peces cobra el jugador de mentira y cuanto tarda.
+  `src/reel.lua` (`MAX_GAIN`, `RUN`, `TENSE`, `SEG_*`, `YIELD_*`, `FISH_*`).
+  Correr `tests/test_reel.lua` despues: lo que hay que mirar no es que pase, es
+  lo que IMPRIME -- cuantos peces cobra el jugador de mentira, cuanto tarda y
+  cuanto rinde la cedida. El objetivo es 10-12 de 12 y una media de 6-30 s.
+  Ojo con dos trampas ya pisadas: tocar la banda y la cedida a la vez bajo la
+  pelea de 12 s a 4,8 y hubo que devolverla a base de TENSE; y el porcentaje de
+  tiempo con el sedal rojo NO sirve de medida, porque la politica del jugador de
+  mentira es "recoge hasta que se ponga rojo" y por construccion vive pegado al
+  limite. Si cambia el ancho de la silueta del pez, cambiar `FISH_W` con ella:
+  la prueba compara los dos.
 * **Balance**: `src/ship.lua` (ritmos, tope de bodega, curva de ceñida),
   `src/stations.lua` (plazas, costes, `holdCapacity`), `src/ports.lua` (precios,
   densidad), `src/crew.lua` (pericia y soldadas). Correr la prueba despues, y

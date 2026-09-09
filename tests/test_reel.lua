@@ -100,7 +100,29 @@ local function fish()
         end
     end
     if not x0 then return nil end
-    return (x0 + x1) / 2, gold
+    return (x0 + x1) / 2, gold, x1 - x0
+end
+
+-- Si el pez esta VUELTO (cediendo). Se lee de la FORMA y no de un color, que
+-- es como lo lee el ojo: la fila de arriba de la silueta esta metida tres
+-- pixeles por el morro y pegada al canto por la cola, asi que mirando de que
+-- lado empieza se sabe hacia donde mira. Es la unica senal de la cedida.
+local function turned()
+    local cx, cy = Reel.center()
+    local x0, top = nil, nil
+    local rows = {}
+    for _, p in ipairs(painted) do
+        local c = p[5]
+        if (c == Palette.white or c == Palette.gold)
+           and Util.dist(p[1], p[2], cx, cy) > Reel.RADIUS + 4 then
+            x0 = math.min(x0 or p[1], p[1])
+            top = math.min(top or p[2], p[2])
+            rows[p[2]] = math.min(rows[p[2]] or p[1], p[1])
+        end
+    end
+    if not x0 then return nil end
+    -- El morro deja la fila de arriba metida; la cola la deja al canto.
+    return rows[top] <= x0 + 1
 end
 
 -- La banda, del color de la espuma: su centro en pixeles de arte.
@@ -202,6 +224,77 @@ do
           string.format("punta en %d,%d", tx, ty))
     check("y es larga de verdad", (cx - tx) > Constants.ART_W * 0.5,
           string.format("%d px de arte", cx - tx))
+end
+
+-- LA COMBA ES DE CANA, NO DE CUERDA. Con la linea tensa la PUNTA es la que
+-- baja y el arranque sale recto del puno, que es lo que hace una vara
+-- empotrada por un extremo. Se mide del dibujo: se compara la cana en reposo
+-- con la cana tensa y se mira cuanto ha bajado cada tercio.
+do
+    local state = sea(6)
+
+    -- Las alturas de la cana (su madera) a lo ancho de la pantalla.
+    local function profile()
+        local col = {}
+        for _, p in ipairs(painted) do
+            if p[5] == Palette.wood then
+                col[p[1]] = math.max(col[p[1]] or p[2], p[2])
+            end
+        end
+        return col
+    end
+    frame(state)
+    local rest = profile()
+
+    -- Con un pez enganchado y la linea tensa hasta el aviso. Se toma la foto
+    -- MIENTRAS esta tensa: rodando sin parar la linea se rompe en menos de un
+    -- segundo, y rota la cana vuelve a estar recta.
+    if bite(state) then
+        local bent, held, a, t = nil, false, 0, 0
+        while t < 5 do
+            if not held then Reel.grab(knob(a)); held = true end
+            a = a + 6 * DT
+            Reel.roll(knob(a))
+            local ev = Reel.update(DT, true, state)
+            World.step(state, DT)
+            frame(state)
+            t = t + DT
+            if alarmed() then bent = profile(); break end
+            if ev then break end
+        end
+        Reel.drop()
+        bent = bent or profile()
+        local tx = select(1, Reel.tip())
+        local cx = select(1, Reel.center())
+        local function drop(at)
+            local x = math.floor(tx + (cx - tx) * at)
+            for dx = 0, 3 do
+                if rest[x + dx] and bent[x + dx] then
+                    return bent[x + dx] - rest[x + dx]
+                end
+            end
+            return nil
+        end
+        local tip, mid, butt = drop(0.02), drop(0.5), drop(0.95)
+        check("la punta de la cana es la que baja",
+              tip and mid and butt and tip > mid and mid > butt,
+              string.format("punta %s, medio %s, puno %s",
+                            tostring(tip), tostring(mid), tostring(butt)))
+        check("y el puno sale recto", butt and butt <= 1,
+              string.format("el puno bajo %s px", tostring(butt)))
+    end
+end
+
+-- FISH_W esta escrito en el modulo para saber cuando el CUERPO del pez toca la
+-- banda, y aqui se comprueba contra el pez que de verdad se pinta: si la
+-- silueta cambia y el numero no, la banda mentiria medio pez.
+do
+    local state = sea(5)
+    if bite(state) then
+        local _, _, w = fish()
+        check("el ancho del pez es el que dice el modulo", w == 11,
+              string.format("se pintan %s px, el modulo dice 11", tostring(w)))
+    end
 end
 
 --== Reposo =================================================================
@@ -433,12 +526,14 @@ do
 
     check("un jugador atento cobra casi siempre", landed >= 10,
           string.format("%d de 12 (%s)", landed, table.concat(lost, ",")))
+    print(string.format("       [%d de 12 cobrados]", landed))
 
     local sum, worst = 0, 0
     for _, t in ipairs(times) do sum = sum + t; worst = math.max(worst, t) end
     local mean = (#times > 0) and (sum / #times) or 0
     check("y la pelea dura lo que tiene que durar", mean > 6 and mean < 30,
           string.format("media %.1f s, la peor %.1f s", mean, worst))
+    print(string.format("       [media %.1f s, la peor %.1f s]", mean, worst))
 
     -- Y no de casualidad: rodar en el momento que toca tiene que ganarle a
     -- rodar siempre, que es lo que separa el mando de un boton.
@@ -452,6 +547,64 @@ do
     end
     check("y mirando se pesca mas que sin mirar", landed > hammer,
           string.format("mirando %d, sin mirar %d", landed, hammer))
+end
+
+--== La cedida =============================================================
+--
+-- Cortarle una arrancada al pez -- que entre en la banda HUYENDO y se recoja
+-- de verdad en las decimas siguientes -- tiene premio: el pez cede unos
+-- segundos, tira mucho menos y el freno aguanta mas. Es lo unico de la pelea
+-- que paga por estar mirando, asi que hay que comprobar dos cosas: que ocurre
+-- y que SE VE, porque un premio invisible no ensena a jugar.
+
+print("== la cedida ==")
+do
+    local RATE = 3.5
+    local seen, gainOn, gainOff, framesOn, framesOff = false, 0, 0, 0, 0
+
+    for seed = 70, 81 do
+        local state = sea(seed)
+        if bite(state) then
+            local held, a, t = false, 0, 0
+            local last = fish()
+            while t < 30 do
+                local x, gold = fish()
+                local rate = 0
+                if x and not alarmed() then rate = gold and RATE or RATE * 0.75 end
+                if rate > 0 then
+                    if not held then Reel.grab(knob(a)); held = true end
+                    a = a + rate * DT
+                    Reel.roll(knob(a))
+                elseif held then Reel.drop(); held = false end
+
+                local ev = Reel.update(DT, true, state)
+                World.step(state, DT)
+                frame(state)
+                t = t + DT
+
+                -- Lo que avanza el pez con la misma mano, cediendo y sin ceder.
+                local now, _ = fish()
+                if now and last and rate > 0 then
+                    if turned() then
+                        seen = true
+                        gainOn = gainOn + (now - last); framesOn = framesOn + 1
+                    else
+                        gainOff = gainOff + (now - last); framesOff = framesOff + 1
+                    end
+                end
+                last = now
+                if ev then if held then Reel.drop() end break end
+            end
+        end
+    end
+
+    check("el pez llega a ceder", seen, "no cedio ni una vez en doce peleas")
+    local on = (framesOn > 0) and (gainOn / framesOn) or 0
+    local off = (framesOff > 0) and (gainOff / framesOff) or 0
+    check("y cediendo se le gana mas terreno", on > off * 1.15,
+          string.format("cediendo %.4f px/cuadro, peleando %.4f", on, off))
+    print(string.format("       [cediendo %.3f px/cuadro contra %.3f peleando, %.0f%% del tiempo]",
+          on, off, 100 * framesOn / math.max(1, framesOn + framesOff)))
 end
 
 --== Guardar el redal =======================================================

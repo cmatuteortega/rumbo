@@ -486,7 +486,28 @@ mientras se pelea, y cae donde se esta mirando, que es la mano que rueda.
 **El segmento es la regla del juego.** Sobre la cana hay una banda clara que
 cambia de sitio cada pocos segundos: es donde el pez aguanta que se tire de el.
 Rodar con el pez **dentro** no cuesta nada; rodar con el pez **fuera** tensa la
-linea, y la linea llena se rompe. De ahi salen las dos maniobras que pide el
+linea, y la linea llena se rompe.
+
+**Dentro se cuenta por el cuerpo del pez, no por su centro.** Midiendo por el
+centro habia una mentira de las que este juego no se permite: el pez mide once
+pixeles de arte, asi que con el centro justo en el canto de la banda el pez se
+ve *metido en ella hasta la mitad* —y sin embargo no se ponia de oro y la cana
+se tensaba—. Cinco pixeles y medio de "parece que si y el juego dice que no" a
+cada lado, y justo en el sitio donde se pelea. Contando por el cuerpo, "el pez
+esta en la banda" quiere decir lo que cualquiera diria mirandolo; lo que se
+perdio de precision se recupero en **ritmo** (la banda se mueve mas a menudo),
+que ademas es mejor sitio para ponerlo: apurar el canto de la banda era una
+pelea de pixeles, llegar a la banda antes de que se vaya es una pelea de tiempo,
+y esa se juega mirando.
+
+**Y hay cedida.** Si el pez entra en la banda **huyendo** —cortandole una
+carrera, no cogiendolo parado— y se recoge de verdad en las decimas siguientes,
+el pez cede un par de segundos: tira la mitad, el freno aguanta mas y se le gana
+casi un 50% mas de terreno. Sin esto la pelea no tenia jugada *buena*, solo
+jugada *correcta*: rodar cuando toca y soltar cuando toca, siempre al mismo
+precio. La cedida es lo unico que paga por estar atento, que es justo lo que
+este mando pide. Y se ve sin inventar ninguna senal nueva: **el pez se vuelve**,
+de morro al carrete, porque un pez que deja de pelear deja de encarar el mar. De ahi salen las dos maniobras que pide el
 mando, que son las dos que pide una cana de verdad: **atraer** cuando el pez
 esta en la banda y **dejarlo ir** —soltar el carrete, que el pez corra hacia
 babor— cuando la banda se ha ido por detras de el. Sin la segunda, pescar seria
@@ -512,7 +533,17 @@ el tipo de cosa que no se ve jugando un rato.
 
 **La tension no tiene barra: la cana se comba.** Es el indicador que ya existe
 en el mundo real y el unico que no hay que aprenderse, y ademas cae encima del
-pez, que es donde se esta mirando. Pasado el aviso el sedal se pone **rojo**, y
+pez, que es donde se esta mirando.
+
+Y se comba **como una cana, no como una cuerda**. Fue `sin(pi*t)` —un arco con
+cero en los dos extremos— y eso dobla el *centro* dejando la punta clavada en el
+eje, que es lo que hace un cabo tendido entre dos puntos. Una cana esta empotrada
+en el carrete y libre por la punta: el pez tira de la punta, la punta es la que
+baja y el arranque sale recto del puno porque ahi la sujeta la mano. Asi que la
+flecha es la del voladizo con la carga en el extremo, `f(u) = u²(3-u)/2` con `u`
+de 0 en el puno a 1 en la punta —tangente horizontal en el empotramiento y
+pendiente creciente hasta la punta—, que es lo que se lee como una cana
+doblandose *y aguantando*. Pasado el aviso el sedal se pone **rojo**, y
 eso es todo lo que se pinta de mas. La misma idea que el nudo de oro de la
 driza: nada de texto donde el propio trasto puede decirlo.
 
