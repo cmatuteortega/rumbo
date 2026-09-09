@@ -164,20 +164,36 @@ tira SIEMPRE, se toque o no: el reposo del carrete no es cero sino la carrera
 del pez, con el dedo encima manda el dedo menos esa carrera (quedarse quieto
 agarrando no es una pausa) y al soltar el carrete se queda con el giro que
 llevaba y se relaja hacia la carrera, que es como se escapa. Sobre la cana hay
-una BANDA que cambia de sitio cada pocos segundos: rodar con el pez dentro es
-gratis y rodar fuera tensa la linea, y de ahi salen las dos maniobras del mando
---atraer y dejarlo ir--. DENTRO se cuenta por el CUERPO del pez y no por su
-centro (`FISH_W`): midiendo por el centro, un pez metido en la banda hasta la
-mitad no se ponia de oro y tensaba igual, que es medio pez de "parece que si y
-el juego dice que no" justo donde se pelea. Y hay CEDIDA: si el pez entra en la
-banda huyendo -- cortandole una carrera, no cogiendolo parado -- y se recoge de
-verdad en las decimas siguientes (`REACT`), cede unos segundos: tira la mitad,
-el freno aguanta mas y se le gana casi un 50% mas de terreno. Se ve porque el
-pez SE VUELVE, de morro al carrete: ni color nuevo ni numero, la postura del
-propio pez. Es lo unico de la pelea que paga por estar mirando.
+una BANDA que cambia de sitio cada pocos segundos, y LA BANDA MANDA: dentro
+el freno da todo lo que tiene, fuera solo un quinto (`OUT_GAIN`), asi que con
+el pez fuera no se le trae -- como mucho se le aguanta -- y ademas tensa. De
+ahi salen las dos maniobras del mando: atraer y dejarlo ir. DENTRO se cuenta
+por el CUERPO del pez y no por su centro (`FISH_W`): midiendo por el centro, un
+pez metido en la banda hasta la mitad no se ponia de oro y tensaba igual, que
+es medio pez de "parece que si y el juego dice que no" justo donde se pelea.
+
+Y se acumula CANSANCIO (`tired`, de 0 a 1): se llena teniendo al pez en la
+banda (`TIRE`) y se olvida despacio fuera (`RECOVER`). Hace dos cosas -- la
+linea se tensa cada vez menos (`TIRE_CALM`, hasta un 15%) y el pez tira menos
+(`TIRE_PULL`) -- o sea que cuanto mas tiempo lleva el pez donde tiene que
+estar, mas barato sale recogerlo SIN doblar la cana. Ese es el premio y es lo
+que hay que aprender. Cortarle una arrancada a tiempo (entra en la banda
+huyendo y se recoge dentro de `REACT`) mete un pellizco de cansancio de golpe
+(`KICK`): un solo recurso con dos formas de llenarlo, paciencia o reflejos.
+Fueron dos sistemas solapados -- una cedida por temporizador aparte -- y no se
+leia ninguno. Se ve sin numero ni barra: pasado `TURN_AT` el pez SE VUELVE, de
+morro al carrete, porque un pez que deja de pelear deja de encarar el mar.
 
 La tension no tiene barra: la cana se COMBA, y el sedal se pone rojo antes de
-romperse. La comba es la de una VIGA EMPOTRADA y no la de una cuerda: fue
+romperse. LA PUNTA DE LA CANA NO SE VE: se sale del cuadro por babor (`OFF`) y
+el sedal sale con ella, asi que del aparejo solo se ve el tramo que cae a bordo
+-- como del timon solo se ve un cuarto de rueda -- y el anzuelo queda donde
+tiene que estar, que es donde no se ve. El recorrido del pez empieza en el
+canto de babor (`MOUTH`), asi que un pez que se escapa SE SALE DEL CUADRO, que
+dice "se ha ido" mejor que pararse en una raya. Por eso `BEND` subio de 8 a 13:
+la flecha del voladizo es maxima en la punta y la punta ya no se ve.
+
+La comba es la de una VIGA EMPOTRADA y no la de una cuerda: fue
 `sin(pi*t)` -- que dobla el centro y deja la punta clavada en el eje, o sea un
 cabo tendido -- y ahora es la flecha del voladizo `u^2*(3-u)/2`, que sale recta
 del puno y baja del todo en la punta. Es lo que se lee como una cana
@@ -242,12 +258,19 @@ que exista el PNG correspondiente en `assets/`, en cuyo caso gana el archivo.
   Correr `tests/test_reel.lua` despues: lo que hay que mirar no es que pase, es
   lo que IMPRIME -- cuantos peces cobra el jugador de mentira, cuanto tarda y
   cuanto rinde la cedida. El objetivo es 10-12 de 12 y una media de 6-30 s.
-  Ojo con dos trampas ya pisadas: tocar la banda y la cedida a la vez bajo la
-  pelea de 12 s a 4,8 y hubo que devolverla a base de TENSE; y el porcentaje de
-  tiempo con el sedal rojo NO sirve de medida, porque la politica del jugador de
-  mentira es "recoge hasta que se ponga rojo" y por construccion vive pegado al
-  limite. Si cambia el ancho de la silueta del pez, cambiar `FISH_W` con ella:
-  la prueba compara los dos.
+  **Y NUNCA AJUSTAR LA TENSION CONTRA EL JUGADOR DE MENTIRA**, que reacciona en
+  UN cuadro. Es el error mas caro que se ha cometido en este mando: TENSE se
+  subio a 0,60 porque el bot perfecto ganaba demasiado facil, y medido despues
+  con reflejos humanos (250-400 ms de retraso entre lo que se pinta y lo que se
+  responde) salio que a 400 ms NUEVE de dieciocho peleas acababan con la LINEA
+  ROTA y NINGUNA con el pez escapado: el unico modo de fallo del mando era el
+  que peor se entiende. Cualquier cambio de TENSE, DANGER, OUT_GAIN o MAX_GAIN
+  hay que medirlo con retraso de reaccion, no con el bot perfecto.
+  Otras dos trampas ya pisadas: tocar la banda y el cansancio a la vez bajo la
+  pelea de 12 s a 4,8; y el porcentaje de tiempo con el sedal rojo NO sirve de
+  medida, porque la politica del jugador de mentira es "recoge hasta que se
+  ponga rojo" y por construccion vive pegado al limite. Si cambia el ancho de la
+  silueta del pez, cambiar `FISH_W` con ella: la prueba compara los dos.
 * **Balance**: `src/ship.lua` (ritmos, tope de bodega, curva de ceñida),
   `src/stations.lua` (plazas, costes, `holdCapacity`), `src/ports.lua` (precios,
   densidad), `src/crew.lua` (pericia y soldadas). Correr la prueba despues, y

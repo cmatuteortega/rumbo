@@ -106,6 +106,18 @@ Reel.RADIUS = 16
 
 local MARGIN = 10       -- aire entre el carrete y los margenes seguros
 local RISE   = 40       -- cuanto sube la punta de la cana sobre el carrete
+
+-- LA PUNTA DE LA CANA NO SE VE: se sale del cuadro por babor y el sedal sale
+-- con ella. Una cana que acaba dentro de la pantalla se lee como un cacharro
+-- de interfaz que mide justo lo que mide; saliendose, se lee como una cana de
+-- verdad de la que solo se ve el tramo que cae a bordo, igual que del timon
+-- solo se ve un cuarto de rueda. Y el anzuelo queda donde tiene que estar, que
+-- es donde no se ve.
+--
+-- OFF es lo que se sale, y MOUTH la columna donde empieza el recorrido del
+-- pez: el canto de babor de la pantalla. Un pez que se escapa se sale del
+-- cuadro, que dice "se ha ido" mejor que pararse en una raya.
+local OFF, MOUTH = 22, 6
 local HUB    = 4        -- radio de la nuez del carrete
 local SPOKES = 6        -- radios del carrete: los que hacen que se vea girar
 local CRANK  = 3        -- radio del puno de la manivela
@@ -192,34 +204,58 @@ local FISH_W = 11
 -- cobrados de ocho a base de barrer.
 local MAX_GAIN = 2.5
 
+-- Y lo que da el freno FUERA de la banda, en fraccion de lo anterior. Es la
+-- regla que hace que la banda mande de verdad: con el pez fuera no se le trae,
+-- como mucho se le aguanta. Antes fuera de la banda se ganaba casi igual y
+-- solo se pagaba en comba, asi que la banda no decidia nada -- se recogia sin
+-- parar y la unica forma de perder era romper la linea. Se midio con reflejos
+-- humanos y salio en crudo: a 400 ms de reaccion, NUEVE de dieciocho peleas
+-- acababan con la linea rota y NINGUNA con el pez escapado. Un mando con un
+-- solo modo de fallo, y encima el que menos se entiende.
+--
+-- Con esto los dos modos vuelven a existir y en el orden que toca: el pez se
+-- va porque no lo has tenido donde tenias que tenerlo, y la linea se rompe
+-- solo si te empenas en tirar donde no se puede.
+local OUT_GAIN = 0.20
+
 -- Tension que se gana por segundo rodando fuera de la banda a la velocidad de
 -- la propia carrera del pez, la que se suelta por segundo el resto del
 -- tiempo, y la que anade cada radian por segundo que el freno esta
 -- resbalando. FURY acota lo primero para que la cana llegue a combarse antes
 -- de que la linea se rompa, o sea para que haya aviso; el resbale no lo
 -- necesita, porque solo se llega a el pasandose a proposito.
-local TENSE, SLACKEN, FURY, SLIP = 0.60, 0.30, 3, 0.25
+local TENSE, SLACKEN, FURY, SLIP = 0.32, 0.55, 3, 0.25
 
 -- A partir de aqui el sedal se pinta en rojo. Va antes de la mitad de camino
 -- a proposito: el aviso tiene que llegar con tiempo de soltar.
 local DANGER = 0.62
 
--- LA CEDIDA: lo que se lleva cortar una arrancada a tiempo.
+-- EL CANSANCIO, que es el corazon de la pelea y lo unico que se acumula.
 --
--- Sin esto la pelea no tenia jugada buena, solo jugada correcta: rodar cuando
--- toca y soltar cuando toca, siempre al mismo precio. Ahora si el pez entra en
--- la banda HUYENDO -- o sea cortandole una carrera, no cogiendolo parado -- y
--- se recoge de verdad en las decimas siguientes, el pez CEDE unos segundos:
--- tira mucho menos y el freno aguanta mas, asi que se le gana un buen trecho.
--- Es lo que pasa de verdad cuando un pez deja de pelear, y es lo que convierte
--- estar atento en algo que se cobra.
+-- Vale de 0 (pez entero) a 1 (rendido). Se llena TENIENDO AL PEZ EN LA BANDA y
+-- se vacia despacio cuando se sale, y hace las dos cosas que hacen falta:
 --
--- REACT es la ventana desde que entra, YIELD lo que dura la cedida, YIELD_RUN
--- lo que le queda de carrera al empezar a ceder y YIELD_HAUL cuanto mas
--- aguanta el freno mientras cede. La cedida se va DESVANECIENDO en vez de
--- apagarse de golpe: el pez se recupera, no se le acaba la pila.
-local REACT, YIELD = 0.35, 1.4
-local YIELD_RUN, YIELD_HAUL = 0.50, 1.30
+--   * la linea se tensa cada vez menos (`TIRE_CALM`), asi que cuanto mas
+--     tiempo lleva el pez en la banda mas se le puede recoger SIN doblar la
+--     cana. Ese es el premio, y es el que convierte el mando en una cosa que
+--     se aprende: aguanta al pez donde toca y luego cobra barato.
+--   * y el pez tira menos (`TIRE_PULL`).
+--
+-- Sustituye a la CEDIDA, que era un premio de decimas por cortar una arrancada
+-- y que se queda como ACELERADOR: cortarle una carrera mete un pellizco de
+-- cansancio de golpe (`KICK`), en vez de ser un sistema aparte. Un solo
+-- recurso con dos formas de llenarlo -- paciencia o reflejos -- se lee de una
+-- vez; dos temporizadores solapados no se leian de ninguna.
+--
+-- Y se ve sin numero ni barra: pasado TURN_AT el pez SE VUELVE, de morro al
+-- carrete, porque un pez que deja de pelear deja de encarar el mar.
+local TIRE, RECOVER = 3.5, 9.0      -- segundos de banda para rendirlo / de olvido
+local TIRE_CALM, TIRE_PULL = 0.85, 0.55
+local TURN_AT = 0.45
+
+-- Y el pellizco de cansancio por cortar una arrancada a tiempo: el pez tiene
+-- que entrar en la banda HUYENDO y hay que recoger de verdad dentro de REACT.
+local REACT, KICK = 0.35, 0.30
 
 -- Entre pique y pique. El minimo no es cero porque un pique inmediato al
 -- sacar el redal se lee como que el juego lo estaba esperando.
@@ -233,7 +269,12 @@ local FISH_BASE, FISH_PER = 6, 2
 -- Cuanto se comba la cana con la linea a tope, y el tiron extra del pique, en
 -- pixeles de arte. El tiron decae LINEAL y llega a cero exacto: es el unico
 -- momento en el que la cana se mueve sola y tiene que acabar quieta.
-local BEND, JOLT, JOLT_TIME = 8, 5, 0.3
+-- La comba maxima y el tiron del pique. Suben desde 8 y 5 porque la flecha
+-- del voladizo es maxima en la PUNTA y la punta ya no se ve (ver OFF): en el
+-- canto de babor, que es lo primero que se ve de la vara, la flecha vale el
+-- 60% de la del extremo. Con los numeros de antes la cana se doblaba casi toda
+-- fuera de cuadro.
+local BEND, JOLT, JOLT_TIME = 13, 8, 0.3
 
 -- Comba del sedal flojo, y lo rapido que pasa de flojo a tenso. El corte esta
 -- calculado para que salte a su valor exacto antes de que se pueda ver medio
@@ -283,7 +324,7 @@ local pos, spin, angle = 0, 0, 0
 local tension, jolt = 0, 0
 local slack = 1               -- 1 = sedal flojo, 0 = tenso
 local seg, segFrom, segTo, segT, segKey = START, START, START, 1, nil
-local inband, react, yield = false, 0, 0   -- la cedida (ver REACT/YIELD)
+local inband, react, tired = false, 0, 0   -- el cansancio (ver TIRE)
 local finger, crank = nil, 0  -- angulo del dedo y radianes que ha rodado sin gastar
 local pending = nil           -- suceso que devolver en el update de este cuadro
 
@@ -301,10 +342,11 @@ function Reel.center()
 end
 
 -- Punta de la cana: hacia babor y por encima del carrete, que es como se
--- sujeta una cana desde la borda de estribor.
+-- sujeta una cana desde la borda de estribor. Cae FUERA de la pantalla (ver
+-- OFF), asi que este punto no se ve nunca: es solo de donde sale la vara.
 function Reel.tip()
     local cx, cy = Reel.center()
-    return math.floor(Constants.SAFE_LEFT / Constants.ART) + MARGIN, cy - RISE
+    return math.floor(Constants.SAFE_LEFT / Constants.ART) - OFF, cy - RISE
 end
 
 -- Eje de la cana: punta, direccion unitaria hacia el puno y largo.
@@ -317,11 +359,26 @@ local function axis()
     return tx, ty, dx / d, dy / d, d
 end
 
--- Lo que recorre el pez: de la punta al canto del carrete, no a su eje. Un
--- pez cobrado esta en la boca del carrete; debajo de el ya no se veria.
+-- Donde entra la cana en la pantalla, medido a lo largo de la vara desde la
+-- punta. Es el cero del recorrido del pez: mas alla se ha ido.
+local function mouth()
+    local tx, _, ux, _, d = axis()
+    if ux < 0.001 then return 0 end
+    return Util.clamp((math.floor(Constants.SAFE_LEFT / Constants.ART) + MOUTH - tx) / ux,
+                      0, d)
+end
+
+-- Lo que recorre el pez: del canto de babor al canto del carrete, no a su eje.
+-- Un pez cobrado esta en la boca del carrete; debajo de el ya no se veria.
 local function track()
     local _, _, _, _, d = axis()
-    return math.max(1, d - Reel.RADIUS - 3)
+    return math.max(1, d - mouth() - Reel.RADIUS - 3)
+end
+
+-- Un punto del RECORRIDO, con `p` de 0 (se va) a 1 (cobrado), en distancia a
+-- lo largo de la vara. Todo lo que se coloca sobre la cana pasa por aqui.
+local function along(p)
+    return mouth() + p * track()
 end
 
 -- Un punto de la cana a `s` pixeles de la punta, con la comba y con lo que le
@@ -375,7 +432,7 @@ function Reel.reset()
     pos, spin, angle = 0, 0, 0
     tension, jolt, slack = 0, 0, 1
     seg, segFrom, segTo, segT, segKey = START, START, START, 1, nil
-    inband, react, yield = false, 0, 0
+    inband, react, tired = false, 0, 0
     finger, crank = nil, 0
 end
 
@@ -480,28 +537,20 @@ end
 
 -- Un paso de la pelea. El carrete es lo unico con inercia; todo lo demas
 -- (banda, tension, comba) se deriva de donde esta el pez.
--- Lo que le queda de pelea al pez mientras cede: YIELD_RUN al empezar y 1 al
--- recuperarse del todo. Se desvanece en vez de apagarse de golpe.
-local function ease()
-    if yield <= 0 then return 1 end
-    return 1 - (1 - YIELD_RUN) * (yield / YIELD)
-end
-
 local function step(state, rate)
     local base = runRate(state)
-    local give = ease()
-    local r = base * give
+    -- Lo que le queda de pelea al pez, de 1 (entero) a 1-TIRE_PULL (rendido).
+    local r = base * (1 - TIRE_PULL * tired)
+    local inside = inBand(state)
     local slip = 0
 
     if finger then
         -- El dedo manda, y el pez tira igual: rodar es ganarle a la carrera,
         -- no empezar de cero. Quedarse quieto con el dedo encima pierde sedal.
         -- Y pasado el freno, la bobina resbala: lo que sobra no viene en pez,
-        -- se queda en la linea.
-        -- Mientras el pez cede el freno aguanta mas, porque no hay nada
-        -- tirando del otro lado: es lo que hace que la cedida se NOTE en
-        -- recorrido y no solo en que el pez pese menos.
-        local cap = MAX_GAIN * (1 + (YIELD_HAUL - 1) * (1 - give) / (1 - YIELD_RUN))
+        -- se queda en la linea. Fuera de la banda el freno da mucho menos (ver
+        -- OUT_GAIN): ahi no se trae al pez, se le aguanta.
+        local cap = MAX_GAIN * (inside and 1 or OUT_GAIN)
         local drive = rate - r
         if drive > cap then
             slip = drive - cap
@@ -521,31 +570,36 @@ local function step(state, rate)
     -- Rodar con el pez fuera de la banda tensa; el resto del tiempo la linea
     -- se afloja sola. La tension se cuenta contra la carrera del pez para que
     -- un pez brioso no perdone mas que uno flojo.
-    -- LA CEDIDA. El pez tiene que entrar en la banda HUYENDO -- cortandole una
-    -- carrera y no cogiendolo parado -- y hay que recoger de verdad en las
-    -- decimas siguientes. Premia estar mirando, que es justo lo que este mando
-    -- pide y lo unico que no se cobraba.
-    local inside = inBand(state)
+    -- EL CANSANCIO. Se llena teniendo al pez en la banda y se olvida despacio
+    -- fuera de ella; cortarle una arrancada mete un pellizco de golpe.
     if inside and not inband and spin < 0 then react = REACT end
     inband = inside
     if react > 0 then
         react = react - FIXED
-        if spin >= MAX_GAIN * 0.6 then react, yield = 0, YIELD end
+        if spin >= MAX_GAIN * 0.6 then
+            react, tired = 0, math.min(1, tired + KICK)
+        end
     end
-    if yield > 0 then yield = math.max(0, yield - FIXED) end
+    tired = Util.clamp(tired + (inside and (FIXED / TIRE) or (-FIXED / RECOVER)), 0, 1)
 
     -- La tension se normaliza contra la carrera ENTERA del pez y no contra la
-    -- que le queda cediendo: si no, un pez rendido -- que tira menos -- haria
+    -- que le queda rendido: si no, un pez cansado -- que tira menos -- haria
     -- que el mismo tiron contara como mas fuerza, que es justo al reves.
+    --
+    -- Y el cansancio la CALMA: es el premio de haber tenido al pez en la banda,
+    -- o sea que recoger sale cada vez mas barato en comba.
     if spin > 0 and not inside then
-        tension = tension + math.min(FURY, spin / base) * TENSE * FIXED
+        tension = tension + math.min(FURY, spin / base)
+                          * TENSE * (1 - TIRE_CALM * tired) * FIXED
     elseif slip <= 0 then
         tension = math.max(0, tension - SLACKEN * FIXED)
     end
 
     -- El freno resbalando tensa este dentro o fuera de la banda: la banda dice
     -- lo que el pez aguanta que se tire de el, no lo que aguanta el aparejo.
-    if slip > 0 then tension = tension + slip / base * SLIP * FIXED end
+    if slip > 0 then
+        tension = tension + slip / base * SLIP * (1 - TIRE_CALM * tired) * FIXED
+    end
 end
 
 --==========================================================================
@@ -773,7 +827,6 @@ end
 function Reel.draw(state)
     local put = settled()
     local lift = math.floor((1 - put) * SLIDE + 0.5)   -- pixeles ENTEROS de arte
-    local len = track()
     local _, _, _, _, rod = axis()
     local bow = BEND * tension + JOLT * jolt
     local half = Reel.segHalf(state)
@@ -793,20 +846,26 @@ function Reel.draw(state)
     --                va tenso al agua. Es la imagen de un pique en cualquier
     --                sitio del mundo, y es la que hace que el pique se lea sin
     --                vibracion, o sea tambien en escritorio.
+    -- El sedal sale de la punta, que esta FUERA de cuadro, asi que lo que se ve
+    -- es el tramo que entra por babor. El corcho si se ve, y debajo de el esta
+    -- el anzuelo, que es lo que no se ve nunca.
     local reason = Reel.idle(state)
     local tx, ty = rodAt(0, bow, lift)
+    local mx, my = rodAt(mouth(), bow, lift)
     local ex, ey
     if hooked then
-        ex, ey = tx - 14, Constants.ART_H + 6
+        ex, ey = mx - 4, Constants.ART_H + 6
     elseif reason then
-        ex, ey = tx - 2, ty + 8
+        -- Sin pescar el sedal va recogido: cuelga corto de la vara, sin llegar
+        -- al agua. Es como se ve una cana que no esta pescando.
+        ex, ey = mx + 2, my + 9
     else
         local wave = math.floor(math.sin(state.time * Util.TAU / BOB_EVERY) * BOB + 0.5)
-        ex, ey = tx - 5, ty + DROP + wave
+        ex, ey = mx + 6, my + DROP + wave
     end
 
     -- La comba se reparte segun lo que cuelgue: con el corcho recogido bajo la
-    -- punta, diez pixeles de comba en ocho de caida seria un lazo.
+    -- vara, diez pixeles de comba en nueve de caida seria un lazo.
     local sag = SAG * slack * math.min(1, math.max(0, ey - ty) / DROP)
     love.graphics.setColor((tension > DANGER) and Palette.red or Palette.sailShade)
     do
@@ -842,8 +901,8 @@ function Reel.draw(state)
         -- La banda: donde el pez aguanta que se tire de el. Va del color de
         -- la espuma y sin contorno propio, para que se lea como un tramo de
         -- la cana y no como una pieza puesta encima.
-        alongRod(Util.clamp(seg - half, 0, 1) * len,
-                 Util.clamp(seg + half, 0, 1) * len, bow, lift, 0, Palette.foam)
+        alongRod(along(Util.clamp(seg - half, 0, 1)),
+                 along(Util.clamp(seg + half, 0, 1)), bow, lift, 0, Palette.foam)
     end
 
     -- El carrete. Sube con el aparejo y RUEDA lo que le toca por subir esa
@@ -881,9 +940,9 @@ function Reel.draw(state)
     -- Y el pez, encima de todo: en oro mientras esta dentro de la banda, que
     -- es cuando rodar sale gratis.
     if hooked then
-        local fx, fy = rodAt(Util.clamp(pos, 0, 1) * len, bow, lift)
+        local fx, fy = rodAt(along(Util.clamp(pos, 0, 1)), bow, lift)
         fx, fy = math.floor(fx), math.floor(fy)
-        local turned = yield > 0
+        local turned = tired >= TURN_AT
         -- El contorno, engordado a los cuatro lados con la propia silueta.
         silhouette(fx - 1, fy, Palette.ink, turned)
         silhouette(fx + 1, fy, Palette.ink, turned)
@@ -901,8 +960,8 @@ function Reel.draw(state)
     -- palabras -- y aparece SOLO cuando hace falta: con la cana pescando aqui
     -- no hay nada, y ese hueco tambien dice lo suyo.
     if reason then
-        local mx, my = rodAt(rod * 0.45, bow, lift)
-        UI.textCenter(reason, mx * Constants.ART, (my + 11) * Constants.ART,
+        local rx, ry = rodAt(along(0.45), bow, lift)
+        UI.textCenter(reason, rx * Constants.ART, (ry + 11) * Constants.ART,
                       Palette.dim, Fonts.tiny)
     end
 end

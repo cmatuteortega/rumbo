@@ -500,14 +500,29 @@ que ademas es mejor sitio para ponerlo: apurar el canto de la banda era una
 pelea de pixeles, llegar a la banda antes de que se vaya es una pelea de tiempo,
 y esa se juega mirando.
 
-**Y hay cedida.** Si el pez entra en la banda **huyendo** —cortandole una
-carrera, no cogiendolo parado— y se recoge de verdad en las decimas siguientes,
-el pez cede un par de segundos: tira la mitad, el freno aguanta mas y se le gana
-casi un 50% mas de terreno. Sin esto la pelea no tenia jugada *buena*, solo
-jugada *correcta*: rodar cuando toca y soltar cuando toca, siempre al mismo
-precio. La cedida es lo unico que paga por estar atento, que es justo lo que
-este mando pide. Y se ve sin inventar ninguna senal nueva: **el pez se vuelve**,
-de morro al carrete, porque un pez que deja de pelear deja de encarar el mar. De ahi salen las dos maniobras que pide el
+**Y la banda manda de verdad: fuera de ella no se trae al pez.** El freno da
+todo lo que tiene con el pez dentro y solo un quinto fuera, asi que fuera de la
+banda como mucho se le aguanta. Antes fuera se ganaba casi igual y solo se
+pagaba en comba, o sea que la banda no decidia nada: se recogia sin parar y la
+unica forma de perder era romper la linea.
+
+**Y se acumula cansancio.** El pez se cansa mientras lo tienes en la banda y lo
+olvida despacio cuando se sale, y eso hace dos cosas: **la linea se tensa cada
+vez menos** —hasta un 15%— y el pez tira menos. O sea que cuanto mas tiempo
+lleva el pez donde tiene que estar, mas barato sale recogerlo *sin doblar la
+cana*. Ese es el premio del mando y es lo que hay que aprender. Cortarle una
+arrancada a tiempo —que entre en la banda huyendo y recoger de verdad en las
+decimas siguientes— mete un pellizco de cansancio de golpe: un solo recurso con
+dos formas de llenarlo, paciencia o reflejos. Fueron dos sistemas solapados y
+no se leia ninguno. Se ve sin inventar ninguna senal nueva: **el pez se vuelve**,
+de morro al carrete, porque un pez que deja de pelear deja de encarar el mar.
+
+**La punta de la cana no se ve.** Se sale del cuadro por babor y el sedal sale
+con ella, asi que del aparejo solo se ve el tramo que cae a bordo —igual que
+del timon solo se ve un cuarto de rueda— y el anzuelo queda donde tiene que
+estar, que es donde no se ve. El recorrido del pez empieza en el canto de babor,
+asi que **un pez que se escapa se sale del cuadro**, que dice "se ha ido" mucho
+mejor que pararse en una raya. De ahi salen las dos maniobras que pide el
 mando, que son las dos que pide una cana de verdad: **atraer** cuando el pez
 esta en la banda y **dejarlo ir** —soltar el carrete, que el pez corra hacia
 babor— cuando la banda se ha ido por detras de el. Sin la segunda, pescar seria
@@ -534,6 +549,19 @@ el tipo de cosa que no se ve jugando un rato.
 **La tension no tiene barra: la cana se comba.** Es el indicador que ya existe
 en el mundo real y el unico que no hay que aprenderse, y ademas cae encima del
 pez, que es donde se esta mirando.
+
+**La tension esta calibrada contra reflejos de persona, y esa es la leccion mas
+cara del mando.** `TENSE` llego a estar al doble porque el jugador de mentira
+—que reacciona en *un cuadro*, 16 ms— ganaba demasiado facil. Medido despues con
+retraso de reaccion realista, a 400 ms **nueve de dieciocho peleas acababan con
+la linea rota y ninguna con el pez escapado**: el unico modo de fallo del mando
+era el que peor se entiende, y estaba puesto para una maquina. Hoy la curva es
+la que toca —atento 14 s, lento 16,5 s, distraido 20 s, mirando otra cosa 29 s—
+o sea que **la falta de atencion se paga en tiempo, no en la pieza**, que es lo
+que corresponde en un idle. La linea sigue rompiendose: rodando sin parar y sin
+hacer caso al rojo revienta en 4,3 s a ritmo normal, con 1,8 s de aviso. La
+diferencia es quien la rompe: antes el que jugaba bien y llegaba tarde, ahora
+solo el que ignora el aviso.
 
 Y se comba **como una cana, no como una cuerda**. Fue `sin(pi*t)` —un arco con
 cero en los dos extremos— y eso dobla el *centro* dejando la punta clavada en el
