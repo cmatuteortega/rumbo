@@ -25,6 +25,7 @@ local Constants = require('src.constants')
 local Palette   = require('src.palette')
 local Util      = require('src.util')
 local Stations  = require('src.stations')
+local Crew      = require('src.crew')
 
 local Art = {}
 
@@ -172,6 +173,10 @@ local function hullBox(w, h)
     return math.floor(w * b.x + 0.5), math.floor(h * b.y + 0.5),
            math.floor(w * b.w + 0.5), math.floor(h * b.h + 0.5)
 end
+
+-- Publica porque src/deck.lua pasea a la tripulacion por el casco y necesita
+-- la misma caja con la que se dibujo, no una medida a ojo.
+Art.hullRect = hullBox
 
 local gen = {}
 
@@ -538,26 +543,47 @@ function gen.port(w, h)
     return c
 end
 
--- Tripulante en cenital: cabeza, hombros y un color de gremio. 8x10.
-local function crewFigure(w, h, roleColor)
-    local c = newCanvas(w, h)
-    local cx = (w - 1) / 2
-    c:disc(cx, h - 4, 2.5, 3, roleColor)              -- cuerpo
-    c:px(cx - 2, h - 2, Palette.ink)
-    c:px(cx + 2, h - 2, Palette.ink)
-    c:disc(cx, 3, 2, 2, Palette.skin)                 -- cabeza vista desde arriba
-    c:hline(1, cx - 2, cx + 2, Palette.ink)           -- pelo / gorro
-    c:px(cx, 0, roleColor)
-    return c
-end
+--== Tripulacion (8x8) =====================================================
 
-function gen.crewHelm(w, h)  return crewFigure(w, h, Palette.gold) end
-function gen.crewSail(w, h)  return crewFigure(w, h, Palette.sail) end
-function gen.crewNet(w, h)   return crewFigure(w, h, Palette.shallow) end
-function gen.crewCook(w, h)  return crewFigure(w, h, Palette.red) end
-function gen.crewWright(w,h) return crewFigure(w, h, Palette.woodLite) end
-function gen.crewWatch(w, h) return crewFigure(w, h, Palette.green) end
-function gen.crewHold(w, h)  return crewFigure(w, h, Palette.rope) end
+-- La tripulacion es una RESERVA de caras, no un monigote por gremio.
+--
+-- Antes habia siete figuras, una por puesto, y el color decia el oficio. Con
+-- caras dibujadas eso sobra y estorba: el oficio ya se lee por donde esta
+-- plantado el tripulante en cubierta, y lo que no se leia era QUIEN es cada
+-- uno. Ahora cada tripulante saca su cara del hash de su nombre
+-- (Crew.face), asi que el gaviero de tu partida tiene siempre la misma cara y
+-- no cambia al mudarlo de puesto.
+--
+-- El sitio de estas es assets/crew_pjNN.png; lo de aqui abajo es el respaldo
+-- para cuando assets/ esta vacio, que es un contrato del proyecto: el juego
+-- tiene que arrancar sin un solo PNG. Se parece a lo que sustituye, no lo
+-- imita: media docena de gorros y chaquetones combinados dan catorce siluetas
+-- distinguibles a este tamano, que es todo lo que hace falta.
+local COATS = {
+    Palette.wood, Palette.rope, Palette.woodDark, Palette.sailShade,
+    Palette.rock, Palette.red, Palette.green, Palette.deep,
+}
+local CAPS = {
+    Palette.ink, Palette.red, Palette.gold, Palette.sail,
+    Palette.shallow, Palette.woodLite,
+}
+
+-- Tripulante en cenital: hombros, cabeza y gorro. 8x8.
+local function crewFace(index)
+    local coat = COATS[(index - 1) % #COATS + 1]
+    local cap  = CAPS[(index * 3 - 1) % #CAPS + 1]
+    return function(w, h)
+        local c = newCanvas(w, h)
+        local cx = (w - 1) / 2
+        c:disc(cx, h - 3, 3, 2.5, coat)                   -- hombros
+        c:px(cx - 3, h - 2, Palette.ink)                  -- manos
+        c:px(cx + 3, h - 2, Palette.ink)
+        c:disc(cx, 2.5, 2, 2, Palette.skin)               -- cabeza desde arriba
+        c:hline(1, cx - 2, cx + 2, cap)                   -- gorro
+        c:px(cx, 0, cap)
+        return c
+    end
+end
 
 --== Iconos (11x11) ========================================================
 
@@ -756,14 +782,6 @@ local SPRITES = {
     { "sea.rock",        10,  8, "sea_rock.png",        gen.rock },
     { "sea.port",        32, 26, "sea_port.png",        gen.port },
 
-    { "crew.helm",        8, 10, "crew_helm.png",       gen.crewHelm },
-    { "crew.sail",        8, 10, "crew_sail.png",       gen.crewSail },
-    { "crew.net",         8, 10, "crew_net.png",        gen.crewNet },
-    { "crew.cook",        8, 10, "crew_cook.png",       gen.crewCook },
-    { "crew.wright",      8, 10, "crew_wright.png",     gen.crewWright },
-    { "crew.watch",       8, 10, "crew_watch.png",      gen.crewWatch },
-    { "crew.hold",        8, 10, "crew_hold.png",       gen.crewHold },
-
     { "icon.coin",       11, 11, "icon_coin.png",       gen.iconCoin },
     { "icon.fish",       11, 11, "icon_fish.png",       gen.iconFish },
     { "icon.wood",       11, 11, "icon_wood.png",       gen.iconWood },
@@ -811,6 +829,29 @@ for _, fam in ipairs({
             function(w, h) return make(w, h, angle) end,
         }
     end
+--== La reserva de caras ===================================================
+
+-- Se registran en bucle y no a mano porque son catorce filas identicas salvo
+-- el numero, y porque cuantas hay lo manda Crew.FACES: la simulacion reparte
+-- caras con ese tope (Crew.face) y una lista escrita a mano se le
+-- desincronizaria en cuanto se anadiera un PNG.
+--
+-- Van al final de la lista, detras de los iconos, porque la lista es tambien
+-- el orden de carga del arranque y lo ultimo que se genera es lo que menos se
+-- echa de menos si la barra de progreso se corta.
+local function faceId(index)
+    return string.format("crew.pj%02d", index)
+end
+
+for i = 1, Crew.FACES do
+    SPRITES[#SPRITES + 1] = {
+        faceId(i), 8, 8, string.format("crew_pj%02d.png", i), crewFace(i),
+    }
+end
+
+-- Sprite de un tripulante, a partir del indice que devuelve Crew.face.
+function Art.crewFace(index)
+    return faceId(index)
 end
 
 Art.SPRITES = SPRITES

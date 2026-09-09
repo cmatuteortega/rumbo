@@ -30,6 +30,22 @@ function Util.hashInt(lo, hi, a, b, c)
     return lo + math.floor(Util.hash01(a, b, c) * (hi - lo + 1)) % (hi - lo + 1)
 end
 
+-- Hash de un texto, para poder meter un nombre en Util.hash01. Es lo que
+-- permite derivar de un tripulante la cara con la que se pinta y el compas de
+-- su paseo por cubierta sin guardar ni una semilla mas en la partida.
+--
+-- Multiplica por 131 y no por un primo grande a proposito: el acumulador se
+-- queda por debajo de 2^31 y el producto por debajo de 2^38, que es donde un
+-- double todavia cuenta enteros exactos. Con un multiplicador de los gordos el
+-- hash empieza a redondear y deja de ser el mismo numero en dos maquinas.
+function Util.hashText(s)
+    local n = 5381
+    for i = 1, #s do
+        n = (n * 131 + s:byte(i)) % 2147483647
+    end
+    return n
+end
+
 -- Angulos en radianes, 0 = norte, creciendo hacia el este (sentido horario),
 -- que es como se lee un rumbo de verdad y como los dibuja la rosa.
 local TAU = math.pi * 2

@@ -23,6 +23,9 @@ love .                        # desde la raiz del proyecto
 lua5.1 tests/test_sim.lua     # prueba de la simulacion, sin ventana
 lua5.1 tests/test_halyard.lua # la driza: fisica y geometria
 lua5.1 tests/test_sea.lua     # el mar: orientacion, calma y estela
+love .                       # desde la raiz del proyecto
+lua5.1 tests/test_sim.lua    # prueba de la simulacion, sin ventana
+lua5.1 tests/test_deck.lua   # el paseo de la tripulacion por cubierta
 ```
 
 Teclas: `F11` / `alt+enter` pantalla completa, `esc` cierra la hoja abierta,
@@ -149,9 +152,10 @@ rumbo/
 │   ├── world.lua         # LA SIMULACION: estado, paso, ausencia, acciones
 │   ├── ship.lua          # estado -> ritmos (todo el balance)
 │   ├── stations.lua      # los seis puestos de cubierta
-│   ├── crew.lua          # tripulantes
+│   ├── crew.lua          # tripulantes: pericia, soldada y cara
 │   ├── ports.lua         # puertos, precios, tabernas
-│   ├── sea.lua           # camara, oleaje, estela y salpicaduras
+│   ├── sea.lua           # camara y dibujo del mar
+│   ├── deck.lua          # donde anda la tripulacion por cubierta (solo dibujo)
 │   ├── compass.lua       # la rosa del timon, centrada en la cabecera
 │   ├── helm.lua          # la rueda del timon: un cuarto en la esquina de estribor
 │   ├── halyard.lua      # la driza del velamen: la cuerda de babor, con fisicas
@@ -167,6 +171,8 @@ rumbo/
     ├── test_sim.lua      # prueba headless de la simulacion
     ├── test_halyard.lua  # prueba de la driza (fisica y geometria, con love de mentira)
     └── test_sea.lua      # prueba del mar (orientacion y estela, con love de mentira)
+    ├── test_deck.lua     # prueba del paseo por cubierta (geometria, sin ventana)
+    └── test_halyard.lua  # prueba de la driza (fisica y geometria, con love de mentira)
 ```
 
 **El corte importante es simulacion / dibujo.** `world.lua`, `ship.lua`,
@@ -693,6 +699,53 @@ porque un aro dorado a cinco pixeles de su cacharro se lee como un error. La
 bodega es la unica que se dibuja sola: hasta que exista su PNG, `gen.shipHold`
 le pinta una trampilla leyendo esas mismas dos fracciones.
 
+### La gente de cubierta
+
+La tripulacion se ve andar por el barco. Vive entera en `src/deck.lua`, que es
+**solo dibujo**: no aporta un numero a la simulacion, no se guarda y no hay un
+`update()` que llamar.
+
+**Cada uno tiene su cara, y sale de su nombre.** Hay catorce en
+`assets/crew_pj01.png`..`crew_pj14.png`, y a cada tripulante le toca la que
+diga el hash de su nombre (`Crew.face`). Antes habia siete monigotes, uno por
+gremio, y el color decia el oficio; ahora el oficio se lee por **donde** esta
+plantado, que es lo que la cubierta ya explicaba mejor, y la cara dice **quien**
+es, que es lo que no se leia. Sacarla del nombre y no de un campo guardado tiene
+dos ventajas que valen la resta: no hay semilla nueva en la partida (regla 4) y
+las tripulaciones ya enroladas en partidas viejas no necesitan migracion.
+
+**Dos paseos, y la diferencia es la que importa:**
+
+* **destinado** — se remueve dos pixeles alrededor de su puesto. Uno clavado se
+  lee como un icono en vez de como una persona; uno que se aleja rompe lo unico
+  que la cubierta explica bien, que es quien esta trabajando en que. El aro del
+  puesto le sigue quedando debajo.
+* **sin destino** — pasea el barco entero, de proa a popa, en algo mas de un
+  minuto. Es lo que hace que contratar de mas se *vea* y no solo se pague: la
+  cubierta se llena de gente que no hace nada.
+
+**El paseo es funcion pura de `state.time`** y del hash del nombre: dos senos de
+periodos que no casan (un Lissajous que no cierra nunca, asi que no se ve el
+bucle) con la fase y el compas propios de cada uno, para que catorce personas no
+marchen a la vez. De ahi salen tres cosas gratis: nada que anadir a `DEFAULTS`,
+el mismo dibujo con `dt` de 1/30 y de 2 s, y una ausencia de ocho horas que
+devuelve a la gente movida de sitio —que es lo que debe pasar— sin haber
+simulado un solo paso de paseo.
+
+Por donde puede andar el que pasea **no es un rectangulo**: es la silueta del
+casco, `Art.hullHalf`, la misma con la que se dibuja el barco. Asi el paseo se
+estrecha solo hacia la proa en vez de sacar a nadie por encima de la borda, y
+sigue cuadrando si maniana el casco se redibuja con otra manga. `tests/test_deck.lua`
+barre miles de instantes contra esa misma silueta, porque un tripulante que sale
+por la banda lo hace cada varios minutos, en la punta de un seno, y con el trapo
+largo tapando media cubierta no se pilla mirando la pantalla.
+
+**Se dibujan detras del trapo**, entre las redes y las velas. La gente anda por
+cubierta y el aparejo esta por encima de su cabeza: pintados al final se subian
+encima del pano y el barco dejaba de leerse como un barco. Los aros de puesto,
+en cambio, van por encima de todo — no son parte del barco sino de la interfaz,
+y un aro que dice "aqui falta gente" tapado por la verga no avisa de nada.
+
 ### Economia
 
 Cuatro recursos (monedas, pescado, madera, raciones) y dos medidores (casco,
@@ -814,6 +867,9 @@ Todos los numeros viven en cuatro sitios:
 * `src/crew.lua` — curva de pericia, soldadas y primas de enganche.
 
 Despues de tocar cualquiera de ellos, `lua5.1 tests/test_sim.lua`.
+
+El paseo de cubierta (`src/deck.lua`) no es balance —no cambia un solo numero—
+pero sus constantes se comprueban igual: `lua5.1 tests/test_deck.lua`.
 
 ---
 

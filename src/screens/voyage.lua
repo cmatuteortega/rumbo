@@ -56,6 +56,7 @@ local Helm      = require('src.helm')
 local Halyard   = require('src.halyard')
 local Reel      = require('src.reel')
 local Ship      = require('src.ship')
+local Deck      = require('src.deck')
 local Stations  = require('src.stations')
 local Crew      = require('src.crew')
 local World     = require('src.world')
@@ -129,28 +130,34 @@ end
 -- linea de esta funcion es
 --     Art.drawIfAny("ship.cannons", ox, oy)
 local function drawShip(s)
-    local ox, oy = shipOrigin()
+    local ox, oy, w, h = shipOrigin()
 
     Art.draw("ship.hull", ox, oy)
     Art.drawIfAny("ship.hold", ox, oy)
     Art.drawIfAny("ship.galley", ox, oy)
     Art.drawIfAny("ship.nets", ox, oy)
+
+    -- La tripulacion se cuela AQUI, entre la cubierta y el trapo, y no al
+    -- final como estaba: la gente anda por cubierta y el aparejo esta por
+    -- encima de su cabeza. Pintados despues de las velas se subian encima del
+    -- pano y el barco dejaba de leerse como un barco.
+    --
+    -- Donde esta cada uno lo dice src/deck.lua: los destinados se remueven en
+    -- su puesto y los que no tienen destino pasean el barco entero.
+    Deck.draw(s, ox, oy, w, h)
+
     Art.draw((s.trim == "reef") and "ship.sailsReef" or "ship.sails", ox, oy)
 
     -- El ancla es la unica capa que dice algo del estado del barco en vez de
     -- decorarlo: solo esta a la vista cuando esta echada.
     if s.docked then Art.drawIfAny("ship.anchor", ox, oy) end
 
-    -- Tripulacion en su puesto. Los de un mismo puesto se separan un pixel
-    -- para que se vean dos cabezas y no una.
+    -- Las marcas de puesto van por ENCIMA de todo, tripulacion y velas
+    -- incluidas. No son parte del barco sino de la interfaz: un aro que dice
+    -- "aqui falta gente" tapado por la verga no avisa de nada.
     for _, def in ipairs(Stations.list) do
         local px, py = stationPoint(def)
         local crew = Ship.crewAt(s, def.id)
-        for i, member in ipairs(crew) do
-            local cw, ch = Art.size(def.crewSprite)
-            local offset = (i - 1) * 4 - (#crew - 1) * 2
-            Art.draw(def.crewSprite, px + offset - cw / 2, py - ch / 2)
-        end
 
         -- Marca del puesto: un aro cuando esta vacio, para que se vea donde
         -- falta gente sin abrir menus.

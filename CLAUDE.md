@@ -16,6 +16,7 @@ Todo el codigo y los comentarios estan en **castellano**. Mantenlo.
 ```sh
 love .                          # el juego
 lua5.1 tests/test_sim.lua       # simulacion, sin ventana - correr tras TODO cambio de balance
+lua5.1 tests/test_deck.lua      # la gente de cubierta - tras tocar src/deck.lua o las caras
 lua5.1 tests/test_halyard.lua   # la driza: fisica y geometria - tras tocar src/halyard.lua
 lua5.1 tests/test_sea.lua       # el mar: orientacion y estela - tras tocar src/sea.lua
 ```
@@ -34,6 +35,16 @@ de mentira peta si alguien lo intenta), que las crestas y las rachas salgan
 siempre a noventa grados y giren con el rumbo, y que con viento flojo haya de
 verdad menos trazos y ninguno blanco. Ademas mide que la V de la estela se abra
 con lo que el barco anda y no con el reloj.
+`test_deck.lua` tambien: `src/art.lua` no llama a `love` hasta que se le pide un
+sprite, asi que la geometria del casco y la reserva de caras se miden sin
+ventana. Esta ahi porque un tripulante que sale por la borda pasa cada varios
+minutos, en la punta de un seno, y con el trapo tapando media cubierta no se
+pilla mirando.
+`test_halyard.lua` prueba DIBUJO —la driza vive en pixeles de arte— asi que se
+monta un `love` de mentira que apunta lo que se pinta, y del dibujo se leen el
+nudo, la comba y el arco. Esta ahi porque los dos fallos de la driza (doblarse
+sobre si misma y no estarse quieta en reposo) no se ven mirando la pantalla un
+rato, solo midiendo.
 
 No hay build ni gestor de dependencias. Tras una edicion amplia:
 
@@ -129,7 +140,13 @@ esta todo el balance. La cuarta pantalla, `chart.lua`, es la carta de marear:
 ensena los puertos descubiertos y fija rumbo a uno (`World.setCourse`), y a
 partir de ahi el timonel corrige solo y el barco atraca al llegar. El dibujo
 del mundo es `src/sea.lua` (camara + mar) mas `voyage.lua` (barco y cubierta);
-el de la interfaz es `src/ui.lua` (inmediata) y `src/hud.lua`.
+el de la interfaz es `src/ui.lua` (inmediata) y `src/hud.lua`. La tripulacion
+que se ve andar por el barco es `src/deck.lua`, y es SOLO dibujo: cada uno saca
+su cara de la reserva de `assets/crew_pjNN.png` segun el hash de su nombre
+(`Crew.face`) y su paseo es funcion pura de `state.time`, sin estado que
+guardar. Los destinados se remueven en su puesto y los que no tienen destino
+pasean el barco entero, por dentro de la silueta de `Art.hullHalf` y siempre
+por DEBAJO del trapo.
 
 El mar de `sea.lua` no guarda nada y todo sale del viento y de la velocidad. Las
 crestas se peinan CONTRA el viento y las rachas corren A FAVOR, asi que las dos
@@ -211,8 +228,9 @@ que exista el PNG correspondiente en `assets/`, en cuyo caso gana el archivo.
 ## Extender
 
 * **Puesto de cubierta**: fila en `Stations.list` (con `deckX`/`deckY` como
-  **fraccion** del casco, no pixeles), un sprite `crew.*` y un icono en
-  `src/art.lua`, y su caso en `Ship.rates` y en `readout()` de `voyage.lua`.
+  **fraccion** del casco, no pixeles), un icono en `src/art.lua`, y su caso en
+  `Ship.rates` y en `readout()` de `voyage.lua`. Un puesto ya NO trae sprite de
+  tripulante: la cara la reparte `Crew.face` desde la reserva.
 * **Recurso**: campo en `state.res` (`World.new`), icono, fila en `RESOURCES`
   de `hud.lua` y lo que lo produzca o gaste en `Ship.rates`/`World.step`.
 * **Sprite**: fila en `SPRITES` de `src/art.lua` con su generador, y su entrada
@@ -225,6 +243,12 @@ que exista el PNG correspondiente en `assets/`, en cuyo caso gana el archivo.
   lleva color claro, la pantalla se llena de marcas brillantes iguales y el mar
   se lee como LLUVIA. El blanco es solo de las rompientes, y sueltas. Correr
   `tests/test_sea.lua` despues.
+  en la tabla de `assets/README.md`.
+* **Cara de tripulante**: subir `Crew.FACES` y dejar el `assets/crew_pjNN.png`
+  que toque. `src/art.lua` las registra en bucle contra esa constante, asi que
+  no hay lista que tocar; lo que si hay que dejar es respaldo generado, porque
+  el juego tiene que arrancar con `assets/` vacio. `tests/test_deck.lua`
+  comprueba las dos cosas.
 * **Pantalla**: modulo con las funciones que necesite (`enter`, `update`,
   `draw`, `press`, `move`, `release`, `keypressed`, `resize`) y alta en el
   `ScreenManager.init` de `main.lua`.
