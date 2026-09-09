@@ -484,6 +484,42 @@ function World.setTrim(state, trim)
     World.log(state, trim == "reef" and "Rizos tomados." or "Trapo largo.")
 end
 
+-- Lo que sube a bordo por el redal (`src/reel.lua`). Pasa por `stow` como
+-- todo lo demas, asi que un pez cobrado con la bodega a rebosar no entra
+-- entero, o no entra.
+--
+-- Y ESO SE DICE. Con la bodega llena se pesca igual -- es el estado en el que
+-- se vuelve de una ausencia larga, y apagar ahi la pesca a mano la apagaba
+-- justo cuando mas rato se lleva mirando -- asi que la pelea se puede ganar y
+-- que no quepa el premio. Es mal negocio, pero es del jugador: lo que no puede
+-- ser es que se pelee un pez y no pase nada visible, que es la misma averia
+-- que un mando que se calla. Por eso hay linea de bitacora tambien cuando no
+-- cabe, y dice cuanto se quedo fuera.
+--
+-- La pelea NO vive aqui: es cosa del mando y no se guarda. Lo unico que llega
+-- a la simulacion es el resultado, que es tambien lo unico que sobrevive a
+-- cerrar la app.
+function World.landFish(state, amount)
+    local added = stow(state, "fish", amount)
+    if added >= amount - 1e-9 then
+        World.log(state, string.format("Un buen pez a bordo: +%d pescado.",
+                  math.floor(added)))
+    elseif added > 0 then
+        World.log(state, string.format("Un buen pez, y solo caben %d: bodega llena.",
+                  math.floor(added)))
+    else
+        World.log(state, "Un buen pez, y no cabe: bodega llena.")
+    end
+    return added
+end
+
+-- Y lo que no sube. Se distingue romper la linea de que se suelte porque son
+-- dos errores distintos -- haber tirado de mas y no haber tirado a tiempo --
+-- y el que se lee en la bitacora es el que se corrige la vez siguiente.
+function World.lostFish(state, snapped)
+    World.log(state, snapped and "La linea se rompe." or "El pez se solto.")
+end
+
 function World.nearestPort(state)
     local best, bestDist
     for _, port in ipairs(Ports.near(state.seed, state.x, state.y, Ports.CELL)) do

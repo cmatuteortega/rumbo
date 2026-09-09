@@ -44,11 +44,12 @@ Romper cualquiera de estas se ve en pantalla al instante.
 `love.graphics.draw`. La camara va con el barco: la proa apunta siempre arriba,
 el barco esta quieto en el centro y lo que gira es el mar (`Sea.project`). Por
 eso nada del mundo puede tener una orientacion que se note — las olas son
-trazos y las islas manchas. Las excepciones son cuatro —la rosa del timon
+trazos y las islas manchas. Las excepciones son cinco —la rosa del timon
 (`src/compass.lua`), la rueda del timon (`src/helm.lua`), la driza del velamen
-(`src/halyard.lua`) y la carta de marear (`src/screens/chart.lua`)— y las
-cuatro son legales porque no usan sprites: pintan agujas, cabillas, cuerda,
-puntos y derrotas con rectangulos de 1x1. La carta es ademas la unica pantalla
+(`src/halyard.lua`), el redal de las redes (`src/reel.lua`) y la carta de
+marear (`src/screens/chart.lua`)— y las cinco son legales porque no usan
+sprites: pintan agujas, cabillas, cuerda, cana, puntos y derrotas con
+rectangulos de 1x1. La carta es ademas la unica pantalla
 con el norte arriba, y eso es a proposito: un papel sobre una mesa no gira con
 el barco.
 
@@ -137,8 +138,24 @@ trapo, rebotando. El largo de la cuerda ES el indicador —no hay lectura, solo
 el nudo en oro cuando soltar ya haria algo— y el trapo se pide con
 `World.setTrim`, no alternando: la driza es la UNICA forma de cambiarlo, el
 boton de estribor que lo alternaba ya no existe y `World.toggleTrim` se fue con
-el. Los dos mandos no salen a la vez, porque mientras uno esta fuera cualquier
+el. Los tres mandos no salen a la vez, porque mientras uno esta fuera cualquier
 otro toque lo recoge.
+
+El tercero es el redal de `src/reel.lua`: tocar el puesto de Redes larga una
+cana por la esquina inferior de estribor —la misma que la rueda, y solo la
+exclusion lo permite— y deja su hoja para el segundo toque. Es el unico mando
+que NO pide nada a la simulacion mientras se usa: la pelea entera vive en el
+modulo y nada de ella se guarda, asi que cerrar la app con un pez enganchado es
+perderlo. `Reel.update` devuelve un suceso —pez cobrado, perdido o linea rota—
+y la travesia lo traduce a `World.landFish` (que pasa por `stow`, con su linea
+de bitacora cuando no cabe) o a `World.lostFish`. El pez corre sobre la cana,
+que es la regla del sedal; la banda clara es donde el pez aguanta que se tire y
+rodar fuera de ella tensa la linea; la tension no tiene barra —la cana se
+comba y el sedal se pone rojo— y el oro dice lo de siempre. En reposo esta
+inmovil salvo el corcho, que es el reverso de la leccion de la driza: una
+cuerda colgada esta quieta, un corcho no lo esta nunca, y una pantalla
+identica cuadro tras cuadro se lee como colgada. Mientras esta fuera el bajo
+entero es suyo: se guardan las dos columnas de botones y la bitacora.
 
 Gobernar tiene dos mandos y no uno: la rosa de la cabecera (`src/compass.lua`)
 para *elegir* rumbo de un toque, y la rueda de `src/helm.lua` — un cuarto de

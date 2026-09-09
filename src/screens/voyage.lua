@@ -15,21 +15,25 @@
 -- ese lienzo y abre su hoja. El resto de la pantalla es mar, salvo la
 -- cabecera y las dos columnas de botones de abajo.
 --
--- Dos puestos no abren su hoja al primer toque, porque sacan un MANDO: el
--- timon larga la rueda de `src/helm.lua` en la esquina de estribor y el
+-- Tres puestos no abren su hoja al primer toque, porque sacan un MANDO: el
+-- timon larga la rueda de `src/helm.lua` en la esquina de estribor, el
 -- velamen larga la driza de `src/halyard.lua` por la esquina de arriba a
--- babor. Los dos dejan su hoja para el segundo toque. Es el orden de la
--- frecuencia: se corrige el rumbo y se cambia el trapo cien veces por cada vez
--- que se destina a alguien a esos puestos, asi que lo que se hace a menudo se
--- cobra el toque corto.
+-- babor y las redes largan el redal de `src/reel.lua` por el bajo de la
+-- pantalla. Los tres dejan su hoja para el segundo toque. Es el orden de la
+-- frecuencia: se corrige el rumbo, se cambia el trapo y se pesca cien veces
+-- por cada vez que se destina a alguien a esos puestos, asi que lo que se hace
+-- a menudo se cobra el toque corto.
 --
--- Los dos mandos no salen a la vez, y no porque se estorben en pantalla --
--- estan en esquinas opuestas -- sino porque mientras uno esta fuera un toque
--- en cualquier otro sitio lo recoge: con los dos fuera, tocar uno guardaria
--- el otro. Con la rueda delante, ademas, la esquina de estribor es suya y la
--- columna de botones de ese lado no se dibuja, porque cae debajo. El toque que
+-- Los tres mandos no salen a la vez, y no porque se estorben en pantalla --
+-- aunque la rueda y el redal nacen de la misma esquina, y solo por esto pueden
+-- hacerlo -- sino porque mientras uno esta fuera un toque en cualquier otro
+-- sitio lo recoge: con dos fuera, tocar uno guardaria el otro. El toque que
 -- recoge un mando NO dispara lo que hubiera bajo el dedo, y ahi la rueda tapa
 -- justo lo que no conviene disparar sin querer: recogerla zarparia de propina.
+--
+-- Lo que tapa cada uno es lo que mide: la rueda se lleva la columna de
+-- botones de estribor, que cae debajo de ella, y el redal se lleva TODO el
+-- bajo -- las dos columnas y la bitacora -- porque cruza de banda a banda.
 --
 -- Los botones van en DOS columnas y no en una: con el timon fuera de la
 -- esquina de estribor la mitad derecha de abajo quedaba vacia, y una sola
@@ -50,6 +54,7 @@ local Sea       = require('src.sea')
 local Compass   = require('src.compass')
 local Helm      = require('src.helm')
 local Halyard   = require('src.halyard')
+local Reel      = require('src.reel')
 local Ship      = require('src.ship')
 local Stations  = require('src.stations')
 local Crew      = require('src.crew')
@@ -66,6 +71,8 @@ local selected = nil       -- id del puesto abierto
 local wheel = false        -- rueda del timon fuera, en la esquina de estribor
 local rope = false         -- driza del velamen fuera, por la esquina de babor
 local hauling = false      -- se esta tirando de la driza
+local spool = false        -- redal de las redes fuera, por el bajo de la pantalla
+local cranking = false     -- se esta rodando el carrete
 local TOUCH_R = 9          -- radio de toque de un puesto, en pixeles de arte
 
 local function state() return Session.state end
@@ -156,7 +163,7 @@ local function drawShip(s)
         -- mando fuera: es lo que ata la rueda de la esquina, o la driza de
         -- babor, al sitio de la cubierta que se ha tocado para sacarla.
         if selected == def.id or (wheel and def.id == "helm")
-           or (rope and def.id == "sails") then
+           or (rope and def.id == "sails") or (spool and def.id == "nets") then
             love.graphics.setColor(Palette.white)
             love.graphics.rectangle("line", math.floor(px) - 4, math.floor(py) - 4, 9, 9)
             love.graphics.setColor(1, 1, 1, 1)
@@ -365,8 +372,10 @@ function Voyage.enter()
     selected = nil
     steering = nil
     wheel, rope, hauling = false, false, false
+    spool, cranking = false, false
     Helm.reset()
     Halyard.reset()
+    Reel.reset()
     Sea.clearWake()
     if Session.offline then
         sheet:show("offline", 460)
@@ -382,12 +391,34 @@ function Voyage.update(dt)
     Helm.update(dt, wheel)
     Halyard.update(dt, rope, s)
 
+    -- El redal no pide nada a la simulacion mientras se pelea: devuelve el
+    -- resultado y aqui se traduce. Ver la cabecera de src/reel.lua sobre por
+    -- que la pelea no vive en el estado guardado.
+    local caught = Reel.update(dt, spool, s)
+    if caught then
+        if caught.kind == "catch" then
+            World.landFish(s, caught.fish)
+        else
+            World.lostFish(s, caught.kind == "snap")
+        end
+    end
+
     -- Cerrar el resumen de la ausencia por la X tambien lo da por leido.
     if Session.offline and not sheet.open then Session.offline = nil end
 end
 
 function Voyage.press(x, y)
     if sheet:blocks(x, y) then return end
+
+    -- Con el redal fuera manda el redal y solo el redal: se agarra el
+    -- carrete, no la cana, porque lo que se hace es rodarlo.
+    if spool then
+        if Reel.contains(x, y) then
+            cranking = true
+            Reel.grab(x, y)
+        end
+        return
+    end
 
     -- Con la driza fuera manda la driza y solo la driza, igual que con la
     -- rueda: se agarra la cuerda donde se ve (cualquier nodo, el nudo con mas
@@ -422,6 +453,10 @@ function Voyage.press(x, y)
 end
 
 function Voyage.move(x, y)
+    if cranking then
+        Reel.roll(x, y)
+        return
+    end
     if hauling then
         Halyard.haul(x, y)
         return
@@ -436,6 +471,14 @@ function Voyage.move(x, y)
 end
 
 function Voyage.release(x, y)
+    -- Soltar el carrete lo deja rodando con el giro que llevaba, que es como
+    -- se escapa el pez: la travesia no decide nada aqui, solo suelta.
+    if cranking then
+        cranking = false
+        Reel.drop()
+        return
+    end
+
     -- Soltar la driza es lo que cambia el trapo, y solo si el tiron llego. La
     -- cuerda se queda fuera despues: es el indicador de cuanto trapo se lleva
     -- y desde donde se tira la vez siguiente.
@@ -459,11 +502,13 @@ function Voyage.release(x, y)
         -- toque en otro puesto): la hoja, y el mando se recoge porque la hoja
         -- lo taparia. El que sale guarda al otro (ver la cabecera).
         if def.id == "helm" and not wheel then
-            wheel, rope = true, false
+            wheel, rope, spool = true, false, false
         elseif def.id == "sails" and not rope then
-            wheel, rope = false, true
+            wheel, rope, spool = false, true, false
+        elseif def.id == "nets" and not spool then
+            wheel, rope, spool = false, false, true
         else
-            wheel, rope = false, false
+            wheel, rope, spool = false, false, false
             selected = def.id
             sheet:show("station", 420)
         end
@@ -473,15 +518,19 @@ function Voyage.release(x, y)
 
     -- Tocar fuera del mando que este fuera es recogerlo, y nada mas: el toque
     -- se consume aqui para que no dispare tambien el boton que haya debajo.
-    if wheel or rope then
-        wheel, rope = false, false
+    if wheel or rope or spool then
+        wheel, rope, spool = false, false, false
         UI.pointer.released = false
     end
 end
 
 function Voyage.keypressed(key)
     if key == "escape" then
-        if wheel or rope then wheel, rope = false, false else sheet:hide() end
+        if wheel or rope or spool then
+            wheel, rope, spool = false, false, false
+        else
+            sheet:hide()
+        end
     end
 end
 
@@ -500,13 +549,19 @@ function Voyage.draw()
     -- franja, y antes que la hoja para que el velo lo cubra como a todo.
     Hud.draw(s)
     Compass.draw(s)
-    Hud.drawLog(s)
+
+    -- La bitacora se lee de reojo cuando no pasa nada, y con el redal fuera
+    -- pasa algo: se quita en cuanto asoma la cana, que le cruza por encima.
+    -- Se mira si se VE y no si esta pedido, por lo mismo que la columna de
+    -- estribor con la rueda: volviendo en cuanto se suelta el toque, el texto
+    -- parpadearia bajo la cana justo mientras se guarda.
+    if not Reel.showing() then Hud.drawLog(s) end
 
     -- Con una hoja abierta los botones de cubierta se siguen viendo (bajo el
     -- velo) pero no responden: el toque es de la hoja. Con un mando fuera,
     -- igual: el unico toque que cuenta es el del mando, y el resto lo recoge
     -- (ver Voyage.release).
-    UI.lock(sheet:visible() or wheel or rope)
+    UI.lock(sheet:visible() or wheel or rope or spool)
 
     -- Dos columnas pegadas a los margenes seguros. El ancho se reparte lo que
     -- hay, con tope: en un movil las dos columnas llenan el bajo de la
@@ -520,13 +575,17 @@ function Voyage.draw()
     local rx = Constants.GAME_WIDTH - Constants.SAFE_RIGHT - 12 - bw
     local row1, row2 = bottom - 60, bottom - 112
 
-    -- Babor: lo que se consulta.
-    if UI.button(lx, row1, bw, bh, "Carta", { icon = "icon.chart" }) then
-        ScreenManager.switch("chart")
-    end
+    -- Babor: lo que se consulta. Con el redal fuera tampoco se dibuja: la
+    -- cana llega hasta esta banda y el sedal cae al agua por delante de los
+    -- botones, asi que asomarian por debajo del aparejo.
+    if not Reel.showing() then
+        if UI.button(lx, row1, bw, bh, "Carta", { icon = "icon.chart" }) then
+            ScreenManager.switch("chart")
+        end
 
-    if UI.button(lx, row2, bw, bh, "Tripulacion", { icon = "icon.crew" }) then
-        sheet:show("crew", 380)
+        if UI.button(lx, row2, bw, bh, "Tripulacion", { icon = "icon.crew" }) then
+            sheet:show("crew", 380)
+        end
     end
 
     -- Estribor: lo que se le hace al barco, y ya solo cosas de puerto. El
@@ -543,7 +602,7 @@ function Voyage.draw()
     -- sitio. Se mira si se VE y no si esta pedida: volviendo en cuanto se
     -- suelta el toque, los botones se verian por entre las cabillas justo
     -- mientras la rueda se va, que es el parpadeo que esto evita.
-    if not Helm.showing() then
+    if not Helm.showing() and not Reel.showing() then
         -- Boton contextual: lo que se puede hacer con el puerto que haya cerca.
         local port = World.canDock(s)
         if s.docked then
@@ -588,6 +647,11 @@ function Voyage.draw()
     -- despues por el mismo motivo: mientras se VE, que es mas de lo que esta
     -- pedida, porque al recogerla sigue en pantalla saliendo.
     if Halyard.showing() then Halyard.draw(s) end
+
+    -- Y el redal, por el bajo. Nace de la misma esquina que la rueda y por eso
+    -- va detras de ella en el mismo sitio de la capa: no pueden verse los dos
+    -- -- ni estar los dos pedidos -- pero el orden lo deja escrito.
+    if Reel.showing() then Reel.draw(s) end
 
     UI.lock(false)
     if sheet:visible() then

@@ -141,6 +141,7 @@ rumbo/
 │   ├── compass.lua       # la rosa del timon, centrada en la cabecera
 │   ├── helm.lua          # la rueda del timon: un cuarto en la esquina de estribor
 │   ├── halyard.lua      # la driza del velamen: la cuerda de babor, con fisicas
+│   ├── reel.lua          # el redal de las redes: pescar a mano por el bajo
 │   ├── hud.lua           # la cabecera (timon al aire, bloque de estribor) y la bitacora
 │   ├── ui.lua            # UI inmediata: botones, filas, hojas
 │   └── screens/
@@ -440,9 +441,11 @@ torcida se queda quieta sobre su material y aparece por el ancla segun sale
 cuerda; contada desde el ancla se veria correr al reves, que es la mentira que
 la llanta de la rueda evita yendo lisa.
 
-**Los dos mandos no salen a la vez.** No porque se estorben —estan en esquinas
-opuestas— sino porque mientras uno esta fuera un toque en cualquier otro sitio
-lo recoge: con los dos fuera, tocar uno guardaria el otro.
+**Los tres mandos no salen a la vez.** No porque se estorben —la rueda y la
+driza estan en esquinas opuestas— sino porque mientras uno esta fuera un toque
+en cualquier otro sitio lo recoge: con dos fuera, tocar uno guardaria el otro.
+Y es esa exclusion la que deja al redal nacer de la misma esquina que la rueda
+sin pisarla nunca.
 
 **Y el trapo no tiene boton.** Lo tuvo, abajo a estribor, diciendo "tomar
 rizos" o "largar trapo" segun lo que hubiera puesto, y se lo ha quedado la
@@ -454,6 +457,102 @@ decia que el trapo tiene dos estados iguales, y la driza dice que recoger
 cuesta un arrastre y largar un tiron—, asi que la que se queda es la que dice
 la verdad. Al quitarlo, la columna de estribor se queda con lo de puerto y
 `World.toggleTrim` se fue con el: el trapo ya solo se **pide**.
+
+### Pescar: el redal del bajo
+
+El tercer mando que se usa navegando es **una cana**, y sale del mismo reparto
+que los otros dos: tocar el puesto de **Redes** en cubierta larga el redal de
+`src/reel.lua` por la esquina inferior de estribor y deja la hoja del puesto
+para el segundo toque. Las redes pescan solas mientras se navega —eso no
+cambia— y el redal es lo que se puede hacer *a mano* encima.
+
+**No pide nada a la simulacion.** La rueda ordena rumbo y la driza pide trapo,
+pero mientras se pelea un pez no hay estado que cambiar: la pelea entera vive
+en el modulo y no en la partida guardada. `Reel.update` devuelve un **suceso**
+—pez cobrado, pez perdido, linea rota— y la travesia lo traduce a
+`World.landFish` o a una linea de bitacora. Cerrar la app con un pez enganchado
+es perderlo, igual que soltar el movil con la cana en la mano.
+
+**La cana es la regla del sedal.** Del carrete sale una cana hacia babor y
+sobre ella corre la silueta del pez: a babor del todo es el pez con todo el
+sedal fuera —se va— y a estribor del todo es el pez en la borda, cobrado. No
+es una barra de interfaz con otro dibujo: es la lectura directa de lo unico que
+hay que saber mientras se pelea, y cae donde se esta mirando, que es la mano
+que rueda.
+
+**Se rueda el carrete**, no se aprieta un boton, y de ahi sale la pelea entera:
+
+| lo que se hace | lo que pasa |
+|----------------|-------------|
+| nada | el pez tira **siempre**: el reposo del carrete no es cero, es la carrera del pez |
+| el dedo encima | manda el dedo, y gira lo que ha corrido *menos* lo que el pez se lleva igual: agarrar y quedarse quieto no es una pausa |
+| soltar rodando | el carrete se queda con su giro y se relaja hacia la carrera: unas decimas de regalo antes de que el pez mande otra vez |
+| volver a agarrar | lo **para**, aunque no se ruede. Es palmear el carrete, y es como se corta una arrancada |
+
+**El segmento es la regla del juego.** Sobre la cana hay una banda clara que
+cambia de sitio cada pocos segundos: es donde el pez aguanta que se tire de el.
+Rodar con el pez **dentro** no cuesta nada; rodar con el pez **fuera** tensa la
+linea, y la linea llena se rompe. De ahi salen las dos maniobras que pide una
+cana de verdad: *atraer* cuando el pez esta en la banda y *dejarlo ir* —soltar,
+que el pez corra hacia babor— cuando la banda se ha ido por detras de el. Sin
+la segunda, pescar seria rodar sin parar. El pez cuenta como dentro cuando su
+**cuerpo** toca la banda y no cuando su centro cae en ella: midiendo por el
+centro habia cinco pixeles y medio a cada lado de "parece que si y el juego
+dice que no", que es exactamente el sitio donde se pelea.
+
+**El carrete lleva freno**, y no es un adorno: es lo que evita la estrategia
+degenerada de todo lo que se rueda, que es rodar como un poseso. Pasado el
+freno la bobina **resbala** —hay un tope de lo que se le puede ganar por
+segundo a la carrera del pez— asi que barrer el pulgar sin mirar no adelanta
+nada, tensa, y ademas se **ve**: la manivela se queda atras del dedo, que es lo
+que hace un freno resbalando.
+
+**Y cortar una arrancada se cobra.** Si el pez entra en la banda *huyendo* y se
+recoge de verdad en las decimas siguientes, **cede** unos segundos: tira mucho
+menos y el freno aguanta mas. Sin eso la pelea no tenia jugada buena, solo
+jugada correcta —rodar cuando toca y soltar cuando toca, siempre al mismo
+precio—; con eso, estar atento vale dinero. La cedida se desvanece en vez de
+apagarse de golpe: el pez se recupera, no se le acaba la pila.
+
+**La tension no tiene barra: la cana se comba.** Es el indicador que ya existe
+en el mundo real, el unico que no hay que aprenderse, y cae encima del pez, que
+es donde se esta mirando. Pasado el aviso el sedal se pone rojo, y eso es lo
+unico que se pinta de mas. El **oro** dice lo que dice en todo el juego —"esto
+es lo que hay que hacer"— en dos sitios: el pez mientras esta dentro de la
+banda (rodar ahora es gratis) y la manivela mientras hay un pez enganchado
+(rodar ahora hace algo). Con la cana en reposo no hay ni una cosa ni la otra, y
+eso es parte del mensaje.
+
+**En reposo esta inmovil, menos el corcho.** Es la leccion de la driza y a la
+vez su reverso. Sin pique no se integra nada —el sedal cuelga con una comba
+fija, la cana va recta, el carrete no gira— pero la pantalla no puede quedarse
+*exactamente* igual cuadro tras cuadro: ocho segundos de eso no se leen como
+esperar, se leen como que el juego se ha colgado. Asi que lo unico que vive es
+el corcho, que es ademas lo unico que esta en el agua: una cuerda colgada esta
+quieta, un corcho no lo esta nunca. Y al picar el corcho **se hunde**, que es
+la imagen de un pique en cualquier sitio del mundo: el pique se lee aunque el
+movil no vibre —vibra— y aunque se este mirando a la otra punta.
+
+**Mientras esta fuera, el bajo de la pantalla es suyo**: se quitan las dos
+columnas de botones y la bitacora. La rueda solo se lleva su columna porque
+cabe en su esquina; el redal cruza de banda a banda —carrete a estribor, cana
+hasta babor y sedal cayendo al agua— asi que debajo no puede quedar nada. Y se
+pierde poco: la bitacora se lee de reojo cuando no pasa nada, y mientras hay un
+pez en la cana lo que pasa esta en la cana.
+
+**Un mando que no puede funcionar lo dice.** Amarrado no corre la singladura y
+tampoco la cana: el redal se larga igual —no dejarlo salir seria un mando que a
+veces no existe— pero escribe por que no pasa nada. Sin eso estaba roto sin
+estarlo, y justo en el estado en el que empieza la partida. Con la **bodega
+llena**, en cambio, se pesca igual: es el estado en el que se vuelve de una
+ausencia larga, o sea que apagar ahi la pesca a mano la apagaba precisamente
+cuando mas rato se lleva mirando. Se puede ganar la pelea y que no quepa el
+premio —mal negocio, pero del jugador— y la bitacora dice cuanto se quedo
+fuera; lo que no puede ser es pelear un pez y que no pase nada visible.
+
+**Y el puesto de Redes se nota en el mando**, que es lo suyo: ensancha la banda
+y aplaca el brio del pez. Un buen pescador no tira mas fuerte, sabe cuando el
+pez aguanta.
 
 ---
 
