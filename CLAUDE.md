@@ -17,6 +17,7 @@ Todo el codigo y los comentarios estan en **castellano**. Mantenlo.
 love .                          # el juego
 lua5.1 tests/test_sim.lua       # simulacion, sin ventana - correr tras TODO cambio de balance
 lua5.1 tests/test_halyard.lua   # la driza: fisica y geometria - tras tocar src/halyard.lua
+lua5.1 tests/test_reel.lua      # el redal: la pelea - tras tocar src/reel.lua
 ```
 
 `test_sim.lua` prueba modulos que no requieren `love` y por eso corre tal cual.
@@ -25,6 +26,16 @@ monta un `love` de mentira que apunta lo que se pinta, y del dibujo se leen el
 nudo, la comba y el arco. Esta ahi porque los dos fallos de la driza (doblarse
 sobre si misma y no estarse quieta en reposo) no se ven mirando la pantalla un
 rato, solo midiendo.
+
+`test_reel.lua` monta el mismo `love` de mentira, pero apuntando tambien EL
+COLOR de cada rectangulo, y con eso PELEA: un jugador de mentira lee del dibujo
+las tres unicas senales que tiene el mando —donde esta el pez, si esta de oro
+(en la banda) y si el sedal esta rojo (la linea va a romperse)— y tiene que
+cobrar peces sin mirar una sola variable del modulo. Si cobra, el dibujo lleva
+de verdad todo lo que hace falta para jugar. Esta ahi porque los desequilibrios
+de una pelea son marginales por los dos lados —rodar acerca el pez y a la vez
+tensa la linea— y no se deciden leyendo el codigo: la primera version se ganaba
+barriendo el pulgar sin mirar, y solo lo dijo la prueba.
 
 No hay build ni gestor de dependencias. Tras una edicion amplia:
 
@@ -44,12 +55,13 @@ Romper cualquiera de estas se ve en pantalla al instante.
 `love.graphics.draw`. La camara va con el barco: la proa apunta siempre arriba,
 el barco esta quieto en el centro y lo que gira es el mar (`Sea.project`). Por
 eso nada del mundo puede tener una orientacion que se note — las olas son
-trazos y las islas manchas. Las excepciones son cuatro —la rosa del timon
+trazos y las islas manchas. Las excepciones son cinco —la rosa del timon
 (`src/compass.lua`), la rueda del timon (`src/helm.lua`), la driza del velamen
-(`src/halyard.lua`) y la carta de marear (`src/screens/chart.lua`)— y las
-cuatro son legales porque no usan sprites: pintan agujas, cabillas, cuerda,
-puntos y derrotas con rectangulos de 1x1. La carta es ademas la unica pantalla
-con el norte arriba, y eso es a proposito: un papel sobre una mesa no gira con
+(`src/halyard.lua`), el redal de las redes (`src/reel.lua`) y la carta de
+marear (`src/screens/chart.lua`)— y las
+cinco son legales porque no usan sprites: pintan agujas, cabillas, cuerda,
+cana, pez, puntos y derrotas con rectangulos de 1x1. La carta es ademas la
+unica pantalla con el norte arriba, y eso es a proposito: un papel sobre una mesa no gira con
 el barco.
 
 Si anades algo con proa (otro barco), tienes dos salidas y ninguna es rotar en
@@ -137,8 +149,28 @@ trapo, rebotando. El largo de la cuerda ES el indicador —no hay lectura, solo
 el nudo en oro cuando soltar ya haria algo— y el trapo se pide con
 `World.setTrim`, no alternando: la driza es la UNICA forma de cambiarlo, el
 boton de estribor que lo alternaba ya no existe y `World.toggleTrim` se fue con
-el. Los dos mandos no salen a la vez, porque mientras uno esta fuera cualquier
+el. Los tres mandos no salen a la vez, porque mientras uno esta fuera cualquier
 otro toque lo recoge.
+
+El tercero es el REDAL de `src/reel.lua`, que sale tocando las redes y ocupa el
+bajo entero: carrete a estribor, cana hacia babor y sedal cayendo al agua, asi
+que mientras esta fuera la travesia se guarda las dos columnas de botones y la
+bitacora. La cana ES la regla del sedal y sobre ella corre la silueta del pez:
+a babor se escapa, a estribor se cobra. La pelea no toca la simulacion ni se
+guarda -- vive entera en el modulo y `Reel.update` devuelve un SUCESO (`catch`,
+`gone`, `snap`) que la travesia traduce a `World.landFish` o a una linea de
+bitacora -- asi que cerrar la app con un pez enganchado es perderlo. El pez
+tira SIEMPRE, se toque o no: el reposo del carrete no es cero sino la carrera
+del pez, con el dedo encima manda el dedo menos esa carrera (quedarse quieto
+agarrando no es una pausa) y al soltar el carrete se queda con el giro que
+llevaba y se relaja hacia la carrera, que es como se escapa. Sobre la cana hay
+una BANDA que cambia de sitio cada pocos segundos: rodar con el pez dentro es
+gratis y rodar fuera tensa la linea, y de ahi salen las dos maniobras del mando
+--atraer y dejarlo ir--. La tension no tiene barra: la cana se COMBA, y el
+sedal se pone rojo antes de romperse. Y el carrete tiene FRENO (`MAX_GAIN`):
+pasado el tope la bobina resbala, el pez no viene mas rapido y solo se tensa la
+linea, que es lo unico que impide que el mando se gane barriendo el pulgar --
+la prueba lo midio antes de que existiera el freno y decia ocho de ocho.
 
 Gobernar tiene dos mandos y no uno: la rosa de la cabecera (`src/compass.lua`)
 para *elegir* rumbo de un toque, y la rueda de `src/helm.lua` — un cuarto de
@@ -169,6 +201,10 @@ que exista el PNG correspondiente en `assets/`, en cuyo caso gana el archivo.
 * **Pantalla**: modulo con las funciones que necesite (`enter`, `update`,
   `draw`, `press`, `move`, `release`, `keypressed`, `resize`) y alta en el
   `ScreenManager.init` de `main.lua`.
+* **Pesca**: la pelea entera esta en las constantes de la cabecera de
+  `src/reel.lua` (`MAX_GAIN`, `RUN`, `TENSE`, `SEG_*`, `FISH_*`). Correr
+  `tests/test_reel.lua` despues: lo que hay que mirar no es que pase, es lo que
+  imprime -- cuantos peces cobra el jugador de mentira y cuanto tarda.
 * **Balance**: `src/ship.lua` (ritmos, tope de bodega, curva de ceñida),
   `src/stations.lua` (plazas, costes, `holdCapacity`), `src/ports.lua` (precios,
   densidad), `src/crew.lua` (pericia y soldadas). Correr la prueba despues, y

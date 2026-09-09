@@ -21,6 +21,8 @@ faltan dos por dibujar (la bodega y el trapo arrizado).
 ```sh
 love .                      # desde la raiz del proyecto
 lua5.1 tests/test_sim.lua   # prueba de la simulacion, sin ventana
+lua5.1 tests/test_halyard.lua  # la driza: fisica y geometria
+lua5.1 tests/test_reel.lua     # el redal: la pelea, jugada desde el dibujo
 ```
 
 Teclas: `F11` / `alt+enter` pantalla completa, `esc` cierra la hoja abierta,
@@ -60,13 +62,14 @@ note**. Las olas son trazos, las islas manchas y los puertos manchas con un
 fanal; todos se leen igual desde cualquier demora. Si algun dia hay otro barco
 en el mar, o se dibuja en ocho rumbos, o rompe la regla.
 
-Las excepciones son cuatro —la rosa del timon (`src/compass.lua`), la rueda del
-timon (`src/helm.lua`), la driza del velamen (`src/halyard.lua`) y la carta de
-marear (`src/screens/chart.lua`)— y las cuatro son legales por la misma razon:
-**no usan sprites**. Sus agujas, cabillas, cuerda, puntos y derrotas se pintan
-con rectangulos de 1x1, asi que apuntan a cualquier angulo sin muestrear nada.
-La rueda y la driza pintan los suyos ademas dentro del `scale()` del mundo, asi
-que su madera y su cuerda tienen el mismo grano que el casco.
+Las excepciones son cinco —la rosa del timon (`src/compass.lua`), la rueda del
+timon (`src/helm.lua`), la driza del velamen (`src/halyard.lua`), el redal de
+las redes (`src/reel.lua`) y la carta de marear (`src/screens/chart.lua`)— y
+las cinco son legales por la misma razon: **no usan sprites**. Sus agujas,
+cabillas, cuerda, cana, pez, puntos y derrotas se pintan con rectangulos de
+1x1, asi que apuntan a cualquier angulo sin muestrear nada. La rueda, la driza
+y el redal pintan los suyos ademas dentro del `scale()` del mundo, asi que su
+madera, su cuerda y su pez tienen el mismo grano que el casco.
 
 La carta ademas es la unica pantalla con el **norte arriba**. La travesia lleva
 la camara solidaria a la proa porque es lo que ves desde cubierta; una carta es
@@ -455,6 +458,112 @@ cuesta un arrastre y largar un tiron—, asi que la que se queda es la que dice
 la verdad. Al quitarlo, la columna de estribor se queda con lo de puerto y
 `World.toggleTrim` se fue con el: el trapo ya solo se **pide**.
 
+
+### La pesca: el redal de estribor
+
+El tercer mando que se usa navegando es **una cana**, y sale igual que los otros
+dos: tocando su puesto. Tocar las redes larga el redal de `src/reel.lua` por el
+bajo de la pantalla —carrete en la esquina de estribor, cana hacia babor— y deja
+la hoja del puesto para el segundo toque.
+
+**La cana es la regla del sedal.** Sobre ella corre la silueta del pez: a babor
+del todo es el pez con todo el sedal fuera —se va— y a estribor del todo es el
+pez en la borda, cobrado. No es una barra de interfaz con otro dibujo: es la
+lectura directa de cuanto queda por recoger, que es lo unico que hay que saber
+mientras se pelea, y cae donde se esta mirando, que es la mano que rueda.
+
+**El pez tira siempre, se toque o no.** El reposo del carrete no es cero sino
+`-run`, la carrera del pez, y de ahi sale la pelea entera:
+
+| lo que se hace | lo que pasa |
+|----------------|-------------|
+| nada | el carrete se desenrolla solo y el pez se va por babor: la cana entera en unos diez segundos |
+| agarrarlo sin rodar | manda el dedo *menos* la carrera del pez, o sea que se sigue perdiendo sedal. Agarrar no es una pausa |
+| agarrarlo de golpe | el carrete se PARA: es palmearlo, y es como se corta una arrancada |
+| rodar | se le gana terreno a la carrera, hasta donde deja el freno |
+| soltar rodando fuerte | el carrete se queda con el giro que llevaba y regala unas decimas antes de que el pez mande otra vez |
+
+**El segmento es la regla del juego.** Sobre la cana hay una banda clara que
+cambia de sitio cada pocos segundos: es donde el pez aguanta que se tire de el.
+Rodar con el pez **dentro** no cuesta nada; rodar con el pez **fuera** tensa la
+linea, y la linea llena se rompe. De ahi salen las dos maniobras que pide el
+mando, que son las dos que pide una cana de verdad: **atraer** cuando el pez
+esta en la banda y **dejarlo ir** —soltar el carrete, que el pez corra hacia
+babor— cuando la banda se ha ido por detras de el. Sin la segunda, pescar seria
+rodar sin parar.
+
+La banda **se desliza** a su sitio nuevo en dos decimas en vez de aparecer alli:
+a este grano un salto de veinte pixeles no se lee como que la banda se ha
+movido, sino como que hay otra banda. Y llega **exacta**, por interpolacion con
+un parametro acotado, en vez de acercarse para siempre: una banda que deriva
+medio pixel repinta su sello entero, que es la misma leccion que costo la driza.
+
+**El carrete tiene freno, y ese es el numero que sostiene el mando.** Un carrete
+de verdad lleva freno, y pasado el freno la bobina **resbala**: se sigue moviendo
+la manivela y el pez no viene mas rapido, solo se tensa la linea. Aqui igual
+(`MAX_GAIN`), y de eso salen dos cosas de balde: pasarse no adelanta nada y
+ademas rompe —asi que barrer el pulgar sin mirar pierde siempre, y pierde
+ensenando por que— y **se ve resbalar sin dibujar nada nuevo**, porque el
+carrete gira lo que da el freno y no lo que pide el dedo, asi que pasado el tope
+la manivela se queda atras de la mano. Sin el freno la cuenta salia justa por
+los dos lados —rodar acerca el pez y a la vez tensa la linea— y la prueba decia
+que ganaba rodar: ocho peces cobrados de ocho a base de barrer. Es exactamente
+el tipo de cosa que no se ve jugando un rato.
+
+**La tension no tiene barra: la cana se comba.** Es el indicador que ya existe
+en el mundo real y el unico que no hay que aprenderse, y ademas cae encima del
+pez, que es donde se esta mirando. Pasado el aviso el sedal se pone **rojo**, y
+eso es todo lo que se pinta de mas. La misma idea que el nudo de oro de la
+driza: nada de texto donde el propio trasto puede decirlo.
+
+**Y el oro dice lo mismo que en todo el juego** —"esto es lo que hay que
+hacer"— en dos sitios: el pez se pinta en oro mientras esta dentro de la banda
+(rodar ahora sale gratis) y la manivela se pone de oro mientras hay un pez
+enganchado (rodar ahora hace algo). Con la cana en reposo no hay ni una cosa ni
+la otra, y ese hueco es parte del mensaje.
+
+**Solo pica con el redal fuera**, navegando y con sitio en bodega. Amarrado no
+corre la singladura y tampoco la cana; con la bodega llena el pez no cabria, y
+cobrar para nada es peor que no cobrar. El pique se sortea con `Util.hash01` y
+el reloj de la travesia, asi que no hay nada aleatorio que guardar, y **vibra el
+movil**: es el unico aviso de este juego que sale de la pantalla, y hace falta
+porque el pique es lo unico que empieza sin que lo empiece el jugador.
+
+**La pelea no se guarda.** Vive entera en el modulo y no toca la simulacion:
+`Reel.update` devuelve un *suceso* —pez cobrado, pez perdido, linea rota— que la
+travesia traduce a `World.landFish` o a una linea de bitacora. Por eso guardar
+el redal con un pez enganchado es perderlo, igual que soltar el movil con la
+cana en la mano, y por eso no hay ningun campo nuevo en el estado ni nada que
+migrar. Lo que sube a bordo pasa por `stow` como todo lo demas.
+
+**Mejorar las redes afloja la pelea, no la salta.** Mas potencia es banda mas
+ancha, pez menos brioso y pieza mas grande: es el pescador el que sabe aguantar
+al pez, no el pez el que se cansa. Y la pesca de arrastre del puesto sigue
+corriendo igual: el redal es un extra encima, no un sustituto.
+
+**Mientras esta fuera, el bajo de la pantalla es suyo:** las dos columnas de
+botones y la bitacora se quitan. La rueda solo se lleva su columna porque cabe
+en su esquina; el redal cruza de banda a banda. Se pierde poco: la bitacora se
+lee de reojo cuando no pasa nada, y mientras hay un pez en la cana lo que pasa
+esta en la cana.
+
+**Entra subiendo por la borda**, desde debajo del canto de abajo, con la misma
+curva y los mismos tiempos que la rueda y la driza, y el carrete rueda con la
+subida para que se lea como un trasto que sube y no como un panel que desliza.
+Como en los otros dos, la animacion es *solo dibujo*: el angulo del dedo se mide
+siempre desde el carrete **puesto**, porque midiendolo desde el que sube el
+propio deslizamiento rodaria el carrete sin que el dedo se moviera y el pez
+vendria solo.
+
+**Y en reposo esta inmovil.** Entre pique y pique no se integra nada: el sedal
+cuelga con una comba fija, la cana va recta, el carrete no gira y lo unico que
+se mueve es un contador que no se ve. Lo unico que se atenua —la comba del
+sedal, el tiron del pique— llega a su valor **exacto** en vez de asintoticamente,
+porque a cinco pixeles de pantalla por pixel de arte una cola exponencial no es
+suave, es un parpadeo. Es la leccion de la driza, y aqui vuelve entera porque la
+cana y el sedal son otra vez un trazo largo: medio pixel de deriva repinta la
+pantalla de lado a lado.
+
 ---
 
 ## El bucle
@@ -468,6 +577,8 @@ setup inicial: amarrado en Puerto Madre, dos manos a bordo, 60 monedas
       │         repartir tripulacion por los puestos
       │         las redes pescan hasta llenar la bodega, la cocina cocina,
       │           el carpintero repara, el vigia avista puertos y restos
+      │         y si estas mirando, TOCAR LAS REDES saca el redal: el juego
+      │           vibra cuando pica y el pez hay que ganarselo rodando
       │         las soldadas se APUNTAN, no se cobran: en el mar no hay banco
       ↓
   atracar  ──►  se liquida la soldada devengada
@@ -505,7 +616,7 @@ niveles) y una potencia = **nivel + pericia destinada**, y nada mas.
 | Cofa | vigia | alcance de vista, restos a la deriva |
 | Carpinteria | carpintero | repara casco gastando madera |
 | Velamen | gaviero | velocidad |
-| Redes | pescador | pescado |
+| Redes | pescador | pescado de arrastre, y el redal: banda mas ancha, pez menos brioso y pieza mas grande |
 | Cocina | cocinero | pescado -> raciones |
 | Bodega | estibador | cuanto cabe a bordo, y por tanto cuanto rinde una ausencia |
 | Timon | timonel | velocidad de caida al nuevo rumbo |
@@ -514,11 +625,12 @@ Un tripulante fuera de su gremio rinde **un tercio**: se puede poner al
 cocinero al timon, pero se nota.
 
 Cada puesto tiene un ancla en el lienzo del barco (`deckX`/`deckY`, fracciones)
-y ahi se toca. Dos de ellos **no abren su hoja al primer toque**, porque sacan
-un mando: el timon saca la rueda y el velamen larga la driza, y los dos dejan
-la hoja para el segundo toque. Es el orden de la frecuencia —se corrige el rumbo
-y se cambia el trapo cien veces por cada vez que se destina a alguien a esos
-puestos— y el precio es un toque de mas para lo que se hace poco. Los tres que ya tienen arte estan clavados sobre su cacharro
+y ahi se toca. Tres de ellos **no abren su hoja al primer toque**, porque sacan
+un mando: el timon saca la rueda, el velamen larga la driza y las redes largan
+el redal, y los tres dejan la hoja para el segundo toque. Es el orden de la
+frecuencia —se corrige el rumbo, se cambia el trapo y se pesca cien veces por
+cada vez que se destina a alguien a esos puestos— y el precio es un toque de
+mas para lo que se hace poco. Los tres que ya tienen arte estan clavados sobre su cacharro
 —la cocina en el fogon, las redes en el aparejo, el velamen al pie del palo—
 porque un aro dorado a cinco pixeles de su cacharro se lee como un error. La
 bodega es la unica que se dibuja sola: hasta que exista su PNG, `gen.shipHold`
@@ -657,6 +769,10 @@ Esto es andamiaje. Lo que esta pensado pero no hecho:
   desgasta a ritmo fijo. El gancho esta en `Ship.rates().wear`.
 * **Encuentros en el mar** — no hay otros barcos. Cuando los haya, hay que
   resolver la regla 1 (o ocho rumbos por barco, o dibujarlos con `pixelart`).
+* **Mas de un pez** — el redal cobra pescado a secas. Lo natural es que haya
+  piezas distintas (una pieza grande que se venda aparte), pero eso es un
+  recurso nuevo: campo en `state.res`, fila en el HUD, precio en el mercado y
+  entrada en `DEFAULTS`.
 * **Comercio real** — hoy solo se vende pescado. La bodega ya tiene capacidad;
   faltan mercancias que valgan distinto en cada puerto.
 * **Las islas no hacen nada** — son decorado. No hay colision ni interaccion:

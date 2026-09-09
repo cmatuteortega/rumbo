@@ -484,6 +484,30 @@ function World.setTrim(state, trim)
     World.log(state, trim == "reef" and "Rizos tomados." or "Trapo largo.")
 end
 
+-- Lo que sube a bordo por el redal (`src/reel.lua`). Pasa por `stow` como
+-- todo lo demas, asi que un pez cobrado con la bodega a rebosar no entra --
+-- por eso el redal no deja picar nada sin sitio: cobrar para nada es peor que
+-- no cobrar.
+--
+-- La pelea NO vive aqui: es cosa del mando y no se guarda. Lo unico que llega
+-- a la simulacion es el resultado, que es tambien lo unico que sobrevive a
+-- cerrar la app.
+function World.landFish(state, amount)
+    local added = stow(state, "fish", amount)
+    if added > 0 then
+        World.log(state, string.format("Un buen pez a bordo: +%d pescado.",
+                  math.floor(added)))
+    end
+    return added
+end
+
+-- Y lo que no sube. Se distingue romper la linea de que se suelte porque son
+-- dos errores distintos -- haber tirado de mas y no haber tirado a tiempo --
+-- y el que se lee en la bitacora es el que se corrige la vez siguiente.
+function World.lostFish(state, snapped)
+    World.log(state, snapped and "La linea se rompe." or "El pez se solto.")
+end
+
 function World.nearestPort(state)
     local best, bestDist
     for _, port in ipairs(Ports.near(state.seed, state.x, state.y, Ports.CELL)) do
