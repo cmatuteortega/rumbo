@@ -313,29 +313,97 @@ end
 function gen.shipSailsFull(w, h) return sails(w, h, false) end
 function gen.shipSailsReef(w, h) return sails(w, h, true) end
 
-function gen.wave(w, h)
-    local c = newCanvas(w, h)
-    c:hline(0, 1, w - 2, Palette.foam)
-    if h > 1 then
-        c:px(0, 1, Palette.shallow)
-        c:px(w - 1, 1, Palette.shallow)
-        c:hline(1, 2, w - 3, Palette.shallow)
+-- Mar: crestas orientadas, rachas, espuma y bigote de proa.
+--
+-- Las crestas son lo unico del mundo que TIENE una orientacion: el viento
+-- sopla hacia algun sitio y el mar se peina en su contra. Como la camara gira
+-- con el barco, la misma cresta se ve a un angulo distinto en cada rumbo, y la
+-- salida es la que manda la regla 1: no rotar en el dibujo, sino tener el trazo
+-- ya pintado en SEA_DIRS orientaciones y elegir la mas cercana. La cuenta esta
+-- en el registro, al final del archivo.
+
+-- Un trazo de cresta, centrado en el lienzo y a un angulo dado.
+--
+-- Tiene GROSOR y tiene sombra, y las dos cosas costaron una tarde. Con un
+-- trazo de un pixel y la sombra puesta debajo a secas, una cresta vertical se
+-- encontraba la sombra en su propia linea y salia un palo fino; una pantalla
+-- de palos finos, todos iguales de largos y todos separados por agua lisa, no
+-- se lee como mar: se lee como LLUVIA, y con el viento por el traves --que es
+-- cuando las crestas caen verticales en pantalla-- se leia como un chaparron.
+--
+-- Lo que lo arregla es que la marca sea un trozo de agua y no una raya: dos
+-- filas de cresta y una de seno oscuro al lado, asi que tiene cara iluminada y
+-- valle. El lado se elige con la componente hacia abajo del perpendicular, no
+-- con el angulo de la cresta: asi el cielo alumbra siempre desde arriba y
+-- virar no cambia la iluminacion del mar, que es justo lo que delata a un
+-- sprite girado.
+local function stroke(c, angle, len, color, shade, cap)
+    local cx, cy = (c.w - 1) / 2, (c.h - 1) / 2
+    local dx, dy = math.cos(angle), math.sin(angle)
+    local hx, hy = dx * len / 2, dy * len / 2
+    -- Perpendicular "hacia abajo": el lado de la sombra.
+    local px, py = -dy, dx
+    if py < 0 then px, py = -px, -py end
+    px, py = Util.round(px), Util.round(py)
+    if shade then
+        c:line(cx - hx + px, cy - hy + py, cx + hx + px, cy + hy + py, shade)
     end
+    c:line(cx - hx, cy - hy, cx + hx, cy + hy, color)
+    if shade then
+        -- La segunda fila va del lado de la luz. Es lo que le da cuerpo.
+        c:line(cx - hx - px, cy - hy - py, cx + hx - px, cy + hy - py, color)
+    end
+    if cap then
+        -- La cabeza rompiente no va en el centro exacto: repetida en todas las
+        -- crestas del mar, un pico centrado se lee como una costura.
+        local t = 0.20
+        c:px(cx + hx * t, cy + hy * t, cap)
+        c:px(cx + hx * t - dx, cy + hy * t - dy, cap)
+        c:px(cx + hx * t - px, cy + hy * t - py, cap)
+    end
+end
+
+function gen.crestRipple(w, h, angle)
+    -- Rizo: el grano del agua. Un trazo de un pixel del color del bajio, sin
+    -- espuma y sin sombra -- el mar en calma es esto y nada mas, y con viento
+    -- fresco es lo que llena el hueco entre ola y ola.
+    local c = newCanvas(w, h)
+    stroke(c, angle, w - 2, Palette.shallow)
     return c
 end
 
-function gen.waveSmall(w, h)
+-- Ola corriente: NO lleva espuma. Es agua somera sobre agua honda, y por eso
+-- casi no contrasta. Fue lo ultimo que se entendio: mientras la ola normal
+-- era clara, el mar entero era un campo de marcas brillantes iguales, y da
+-- igual como de cortas fueran. El blanco tiene que ser raro para que signifique
+-- algo -- solo rompen las de sea.swell.
+function gen.crestWave(w, h, angle)
     local c = newCanvas(w, h)
-    c:hline(0, 0, w - 1, Palette.shallow)
+    stroke(c, angle, w - 2, Palette.shallow, Palette.deep)
     return c
 end
 
-function gen.gust(w, h)
-    -- Racha de viento: tres trazos que se van acortando.
+function gen.crestSwell(w, h, angle)
+    -- Ola hecha: la unica que rompe, y por eso la unica que lleva blanco. Sale
+    -- solo con viento fresco y en las manchas de mar picado (ver src/sea.lua).
     local c = newCanvas(w, h)
-    c:hline(0, 0, w - 3, Palette.foam)
-    c:hline(1, 2, w - 1, Palette.foam)
-    c:hline(2, 1, w - 4, Palette.foam)
+    stroke(c, angle, w - 2, Palette.foam, Palette.deep, Palette.white)
+    return c
+end
+
+function gen.gustStreak(w, h, angle)
+    -- Racha: a diferencia de la cresta, corre A FAVOR del viento y no contra
+    -- el, asi que en pantalla cruza las olas en angulo recto. Va en tres
+    -- tramos porque una raya entera de trece pixeles se lee como un cable.
+    local c = newCanvas(w, h)
+    local cx, cy = (c.w - 1) / 2, (c.h - 1) / 2
+    local dx, dy = math.cos(angle), math.sin(angle)
+    local len = w - 2
+    local segs = { { -0.50, -0.30 }, { -0.06, 0.16 }, { 0.34, 0.50 } }
+    for _, s in ipairs(segs) do
+        c:line(cx + dx * len * s[1], cy + dy * len * s[1],
+               cx + dx * len * s[2], cy + dy * len * s[2], Palette.foam)
+    end
     return c
 end
 
@@ -344,6 +412,65 @@ function gen.foam(w, h)
     c:disc((w - 1) / 2, (h - 1) / 2, (w - 1) / 2, (h - 1) / 2, Palette.white)
     return c
 end
+
+function gen.drop(w, h)
+    -- La gota de una salpicadura y el punto de los brazos de la estela. Mas
+    -- pequena que la espuma a proposito: lo que se aleja del casco se deshace.
+    local c = newCanvas(w, h)
+    c:rect(0, 0, w, h, Palette.white)
+    return c
+end
+
+-- Bigote de proa: las dos alas de agua que la roda levanta al abrirse paso.
+--
+-- Es lo unico del mar que se dibuja pegado a la pantalla y no al mundo, y es
+-- legal por la misma razon que el barco: la proa apunta SIEMPRE arriba, asi
+-- que el bigote no tiene angulo que elegir. Hay tres tamanos y la velocidad
+-- decide cual; sin el, un barco parado y uno a cinco nudos se ven igual.
+local function bowWave(w, h)
+    local c = newCanvas(w, h)
+    local cx = (w - 1) / 2
+    c:line(cx, 1, 0, h - 1, Palette.foam)
+    c:line(cx, 1, w - 1, h - 1, Palette.foam)
+    c:line(cx, 0, 0, h - 2, Palette.white)
+    c:line(cx, 0, w - 1, h - 2, Palette.white)
+    return c
+end
+
+-- Un solo generador para los tres: el tamano lo pone el registro.
+function gen.bowWave(w, h) return bowWave(w, h) end
+
+-- Mancha de calma: agua honda y lisa, sin rizos encima. El mar de un solo azul
+-- es lo que hace que un fondo plano se lea como papel pintado; estas manchas
+-- son la variacion grande, la que se ve venir desde lejos. Van difuminadas al
+-- borde -- una fila si y otra no -- porque un disco de canto duro a este grano
+-- de pixel se lee como una isla sumergida.
+local function calmPatch(w, h, salt)
+    local c = newCanvas(w, h)
+    local cx, cy = (w - 1) / 2, (h - 1) / 2
+    for y = 0, h - 1 do
+        for x = 0, w - 1 do
+            -- Radio irregular: un ovalo perfecto se reconoce repetido.
+            local ang = math.atan2(y - cy, x - cx)
+            local wob = 0.80 + 0.30 * Util.hash01(math.floor(ang * 4), salt, 3)
+            local nx = (x - cx) / ((w / 2) * wob)
+            local ny = (y - cy) / ((h / 2) * wob)
+            local d = nx * nx + ny * ny
+            -- Todo tramado y nada macizo: un disco relleno de agua honda se
+            -- lee como un agujero, o como una isla sumergida. Tramado, el ojo
+            -- lo mezcla y sale un mar mas oscuro, que es lo que se queria.
+            if d <= 0.60 then
+                if (x + y) % 2 == 0 then c:px(x, y, Palette.deep) end
+            elseif d <= 1 and (x + y) % 4 == 0 then
+                c:px(x, y, Palette.deep)
+            end
+        end
+    end
+    return c
+end
+
+function gen.calmBig(w, h)   return calmPatch(w, h, 1) end
+function gen.calmSmall(w, h) return calmPatch(w, h, 2) end
 
 function gen.island(w, h)
     local c = newCanvas(w, h)
@@ -644,10 +771,13 @@ local SPRITES = {
     { "ship.sailsReef", SHIP_W, SHIP_H, "sails_reef1.png", gen.shipSailsReef },
     { "ship.anchor",    SHIP_W, SHIP_H, "anchor1.png",     nil },
 
-    { "sea.wave",         7,  2, "sea_wave.png",        gen.wave },
-    { "sea.ripple",       4,  1, "sea_ripple.png",      gen.waveSmall },
-    { "sea.gust",        11,  3, "sea_gust.png",        gen.gust },
     { "sea.foam",         3,  3, "sea_foam.png",        gen.foam },
+    { "sea.drop",         2,  2, "sea_drop.png",        gen.drop },
+    { "sea.calm",        56, 44, "sea_calm.png",        gen.calmBig },
+    { "sea.calmet",      38, 30, "sea_calmet.png",      gen.calmSmall },
+    { "sea.bow1",         9,  3, "sea_bow1.png",        gen.bowWave },
+    { "sea.bow2",        13,  4, "sea_bow2.png",        gen.bowWave },
+    { "sea.bow3",        17,  5, "sea_bow3.png",        gen.bowWave },
     { "sea.island",      40, 32, "sea_island.png",      gen.island },
     { "sea.rock",        10,  8, "sea_rock.png",        gen.rock },
     { "sea.port",        32, 26, "sea_port.png",        gen.port },
@@ -668,6 +798,37 @@ local SPRITES = {
     { "ui.dial",         44, 44, "ui_dial.png",         gen.dial },
 }
 
+-- Las cuatro familias orientadas del mar. Cada una es el MISMO trazo pintado
+-- en SEA_DIRS angulos, y src/sea.lua elige el que toca segun donde caiga el
+-- viento en pantalla. Es la primera de las dos salidas que deja la regla 1
+-- ("ocho sprites de rumbo, o primitivas"), y aqui gana porque el mar son
+-- doscientos trazos por fotograma: un sprite ya hecho se dibuja de un tiron y
+-- doscientas lineas de Bresenham en vivo no.
+--
+-- Doce pasos son quince grados. Es el grano al que un trazo de trece pixeles
+-- cambia UN pixel de punta entre una orientacion y la siguiente, asi que al
+-- virar el mar se repeina sin que se vea saltar; con ocho ya se nota.
+local SEA_DIRS = 12
+Art.SEA_DIRS = SEA_DIRS
+
+for _, fam in ipairs({
+    { "sea.ripple",  3, gen.crestRipple },
+    { "sea.wave",    6, gen.crestWave },
+    { "sea.swell",   8, gen.crestSwell },
+    { "sea.gust",    9, gen.gustStreak },
+}) do
+    local id, len, make = fam[1], fam[2], fam[3]
+    -- El lienzo es cuadrado y del largo del trazo: en diagonal ocupa menos, y
+    -- de sobra para la fila de sombra.
+    local box = len + 2
+    local file = id:gsub("%.", "_")
+    for d = 1, SEA_DIRS do
+        local angle = (d - 1) * math.pi / SEA_DIRS
+        SPRITES[#SPRITES + 1] = {
+            id .. d, box, box, file .. "_" .. d .. ".png",
+            function(w, h) return make(w, h, angle) end,
+        }
+    end
 --== La reserva de caras ===================================================
 
 -- Se registran en bucle y no a mano porque son catorce filas identicas salvo

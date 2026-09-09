@@ -18,9 +18,23 @@ love .                          # el juego
 lua5.1 tests/test_sim.lua       # simulacion, sin ventana - correr tras TODO cambio de balance
 lua5.1 tests/test_deck.lua      # la gente de cubierta - tras tocar src/deck.lua o las caras
 lua5.1 tests/test_halyard.lua   # la driza: fisica y geometria - tras tocar src/halyard.lua
+lua5.1 tests/test_sea.lua       # el mar: orientacion y estela - tras tocar src/sea.lua
 ```
 
 `test_sim.lua` prueba modulos que no requieren `love` y por eso corre tal cual.
+Los otros dos prueban DIBUJO —viven en pixeles de arte— asi que montan un
+`love` de mentira que apunta lo que se pinta y miden sobre eso.
+
+`test_halyard.lua` lee del dibujo el nudo, la comba y el arco. Esta ahi porque
+los dos fallos de la driza (doblarse sobre si misma y no estarse quieta en
+reposo) no se ven mirando la pantalla un rato, solo midiendo.
+
+`test_sea.lua` lee que sprite de cada familia se ha usado y donde. Vigila tres
+cosas que tampoco se ven a ojo: que **ni una** llamada pase rotacion (el love
+de mentira peta si alguien lo intenta), que las crestas y las rachas salgan
+siempre a noventa grados y giren con el rumbo, y que con viento flojo haya de
+verdad menos trazos y ninguno blanco. Ademas mide que la V de la estela se abra
+con lo que el barco anda y no con el reloj.
 `test_deck.lua` tambien: `src/art.lua` no llama a `love` hasta que se le pide un
 sprite, asi que la geometria del casco y la reserva de caras se miden sin
 ventana. Esta ahi porque un tripulante que sale por la borda pasa cada varios
@@ -48,19 +62,24 @@ Romper cualquiera de estas se ve en pantalla al instante.
 
 **Nada se dibuja girado.** Ninguna llamada pasa rotacion a
 `love.graphics.draw`. La camara va con el barco: la proa apunta siempre arriba,
-el barco esta quieto en el centro y lo que gira es el mar (`Sea.project`). Por
-eso nada del mundo puede tener una orientacion que se note — las olas son
-trazos y las islas manchas. Las excepciones son cinco —la rosa del timon
-(`src/compass.lua`), la rueda del timon (`src/helm.lua`), la driza del velamen
-(`src/halyard.lua`), el redal de las redes (`src/reel.lua`) y la carta de
-marear (`src/screens/chart.lua`)— y las cinco son legales porque no usan
-sprites: pintan agujas, cabillas, cuerda, cana, puntos y derrotas con
-rectangulos de 1x1. La carta es ademas la unica pantalla
-con el norte arriba, y eso es a proposito: un papel sobre una mesa no gira con
-el barco.
+el barco esta quieto en el centro y lo que gira es el mar (`Sea.project`). Las
+excepciones son cinco —la rosa del timon (`src/compass.lua`), la rueda del
+timon (`src/helm.lua`), la driza del velamen (`src/halyard.lua`), el redal de
+las redes (`src/reel.lua`) y la carta de marear (`src/screens/chart.lua`)— y
+las cinco son legales porque no usan sprites: pintan agujas, cabillas, cuerda,
+cana, puntos y derrotas con rectangulos de 1x1. La carta es ademas la unica
+pantalla con el norte arriba, y eso es a proposito: un papel sobre una mesa no
+gira con el barco.
 
-Si anades algo con proa (otro barco), tienes dos salidas y ninguna es rotar en
-draw: ocho sprites de rumbo, o dibujarlo con primitivas como el timon.
+Si anades algo con orientacion, tienes dos salidas y ninguna es rotar en draw:
+**un sprite por rumbo**, o dibujarlo con primitivas como el timon.
+
+El mar toma la primera. Las islas y los puertos siguen siendo manchas sin
+direccion, pero las CRESTAS si tienen una —se peinan contra el viento, asi que
+van en diagonal cuando el viento va en diagonal— y por eso cada trazo esta
+pintado doce veces, una cada quince grados (`Art.SEA_DIRS`), y `src/sea.lua`
+elige la orientacion por el angulo en pantalla. Doce, y no ocho, porque a este
+tamano de pixel con ocho se ve saltar el mar al virar.
 
 **Solo pixeles enteros.** El mundo se dibuja dentro de un `scale()` entero
 (`Constants.ART`) y toda posicion se redondea. `Art.draw`/`Art.drawCentered`
@@ -129,6 +148,26 @@ guardar. Los destinados se remueven en su puesto y los que no tienen destino
 pasean el barco entero, por dentro de la silueta de `Art.hullHalf` y siempre
 por DEBAJO del trapo.
 
+El mar de `sea.lua` no guarda nada y todo sale del viento y de la velocidad. Las
+crestas se peinan CONTRA el viento y las rachas corren A FAVOR, asi que las dos
+familias van siempre a noventa grados y giran con el rumbo; la fuerza del viento
+—estirada a [0,1] en `Sea.state`, porque el rango del viento es corto— decide
+cuantos trazos hay, como de grandes y si alguno rompe en blanco, y un ruido de
+manchas (`SWELL_CELL`) hace que un trozo de mar este picado y el de al lado
+liso. Con viento flojo quedan cuatro rizos y ni una racha. Los campos que
+desfilan (olas, rachas, y las manchas de agua honda) no se reciclan con un
+modulo —eso da un tiron cada vuelta— sino desplazando el punto alrededor del
+cual se barren las celdas. Y los trazos no se pintan segun se recorren: se
+apuntan por sprite y se sueltan al final todos los de uno seguidos, porque con
+treinta y seis sprites entremezclados al azar cada trazo rompia el envio del
+anterior.
+
+La estela son dos cosas: el remolino de popa, que se queda donde se solto, y los
+brazos de la V, que se abren con lo que el barco ANDA (`state.distance`, no el
+reloj) y por eso se doblan solos en una virada. Delante, el bigote de la roda en
+tres tamanos y unas salpicaduras a sotavento; los dos callan por debajo de
+`WORKING`, que es donde un barco deja de levantar agua.
+
 Los mandos que se usan navegando salen tocando SU puesto en cubierta, no de la
 columna de botones, y por eso el timon y el velamen dejan su hoja para el
 segundo toque. La driza de `src/halyard.lua` es el del trapo: una cuerda con
@@ -195,6 +234,15 @@ que exista el PNG correspondiente en `assets/`, en cuyo caso gana el archivo.
 * **Recurso**: campo en `state.res` (`World.new`), icono, fila en `RESOURCES`
   de `hud.lua` y lo que lo produzca o gaste en `Ship.rates`/`World.step`.
 * **Sprite**: fila en `SPRITES` de `src/art.lua` con su generador, y su entrada
+  en la tabla de `assets/README.md`. Si lo que anades tiene ORIENTACION, no lo
+  rotes: registralo como familia, en el bucle de `SEA_DIRS`, y elige con
+  `Sea.orient`.
+* **Mar**: los trazos en `src/art.lua` (`gen.crest*`), el reparto en
+  `drawWaves` de `src/sea.lua` — cuantos hay (`density`), cual sale (`grade`) y
+  como se mueven. La mezcla importa mas que cada trazo: si la ola corriente
+  lleva color claro, la pantalla se llena de marcas brillantes iguales y el mar
+  se lee como LLUVIA. El blanco es solo de las rompientes, y sueltas. Correr
+  `tests/test_sea.lua` despues.
   en la tabla de `assets/README.md`.
 * **Cara de tripulante**: subir `Crew.FACES` y dejar el `assets/crew_pjNN.png`
   que toque. `src/art.lua` las registra en bucle contra esa constante, asi que
