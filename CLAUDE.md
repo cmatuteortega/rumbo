@@ -172,6 +172,27 @@ pasado el tope la bobina resbala, el pez no viene mas rapido y solo se tensa la
 linea, que es lo unico que impide que el mando se gane barriendo el pulgar --
 la prueba lo midio antes de que existiera el freno y decia ocho de ocho.
 
+Del sedal cuelga un CORCHO, y no es adorno: es la regla de la driza al reves.
+La driza cuelga inmovil porque una cuerda colgada esta quieta; un corcho en el
+agua no lo esta nunca, y uno que se para esta roto. El aparejo -- cana, carrete
+y forma del sedal -- sigue sin mover un pixel entre pique y pique, y lo unico
+que vive es el corcho cabeceando, porque ocho segundos de pantalla congelada no
+se leen como esperar un pique sino como que el juego se ha colgado (se probo
+con el pulgar y fue exactamente eso). Al picar el corcho SE HUNDE y desaparece,
+que es la imagen de un pique en cualquier sitio del mundo: asi el pique se lee
+tambien en escritorio, donde `love.system.vibrate` no hace nada.
+
+Y `Reel.idle(state)` devuelve POR QUE no se puede pescar, o nil. Se pinta bajo
+la cana, y existe porque el mando estaba roto sin estarlo: amarrado se sacaba
+el redal, el sedal caia al agua y ahi se quedaba para siempre sin pique y sin
+una sola pista -- y amarrado es donde EMPIEZA la partida. Un mando que no puede
+funcionar tiene que decirlo; callarse es lo mismo que estar averiado. Hoy el
+unico motivo es estar amarrado: con la BODEGA LLENA se pesca igual, a
+proposito, porque la bodega llena es el estado en el que se vuelve de una
+ausencia larga y apagar ahi la pesca a mano la apagaba justo cuando mas rato se
+lleva mirando la pantalla. Lo que no quepa lo dice `World.landFish` en la
+bitacora, que tiene linea tambien cuando no entra nada.
+
 Gobernar tiene dos mandos y no uno: la rosa de la cabecera (`src/compass.lua`)
 para *elegir* rumbo de un toque, y la rueda de `src/helm.lua` — un cuarto de
 rueda con el centro en la esquina inferior de estribor — para *corregirlo*

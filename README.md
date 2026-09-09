@@ -522,12 +522,41 @@ hacer"— en dos sitios: el pez se pinta en oro mientras esta dentro de la banda
 enganchado (rodar ahora hace algo). Con la cana en reposo no hay ni una cosa ni
 la otra, y ese hueco es parte del mensaje.
 
-**Solo pica con el redal fuera**, navegando y con sitio en bodega. Amarrado no
-corre la singladura y tampoco la cana; con la bodega llena el pez no cabria, y
-cobrar para nada es peor que no cobrar. El pique se sortea con `Util.hash01` y
-el reloj de la travesia, asi que no hay nada aleatorio que guardar, y **vibra el
-movil**: es el unico aviso de este juego que sale de la pantalla, y hace falta
-porque el pique es lo unico que empieza sin que lo empiece el jugador.
+**Solo pica con el redal fuera y navegando.** Amarrado no corre la singladura y
+tampoco la cana. El pique se sortea con `Util.hash01` y el reloj de la travesia,
+asi que no hay nada aleatorio que guardar, y **vibra el movil**: es el unico
+aviso de este juego que sale de la pantalla, y hace falta porque el pique es lo
+unico que empieza sin que lo empiece el jugador.
+
+**Con la bodega llena se pesca igual**, y es una decision tomada contra el
+argumento contrario. El argumento era que cobrar un pez que no cabe es cobrar
+para nada, asi que mejor que no picara; pero la bodega llena es justo el estado
+en el que se vuelve despues de una ausencia larga, o sea que la pesca a mano se
+apagaba sola precisamente cuando mas rato se lleva mirando la pantalla. Pelear
+y que no quepa es mal negocio, pero es del jugador; lo que no puede ser es que
+el mando se apague sin decir nada. Asi que pica, y `World.landFish` deja linea
+de bitacora tambien cuando no entra nada.
+
+**Del sedal cuelga un corcho, y es la regla de la driza al reves.** La driza
+cuelga inmovil porque una cuerda colgada esta quieta; un corcho en el agua no lo
+esta nunca, y uno que se para esta roto. El aparejo —cana, carrete y forma del
+sedal— sigue sin mover un pixel entre pique y pique, y lo unico que vive es el
+corcho cabeceando dos pixeles cada dos segundos. No es un capricho: se probo con
+el pulgar y ocho segundos de pantalla congelada no se leen como esperar un
+pique, se leen como que el juego se ha colgado. Y al picar **el corcho se hunde
+y desaparece**, que es la imagen de un pique en cualquier sitio del mundo: asi
+el pique se lee tambien en escritorio, donde `love.system.vibrate` no hace nada.
+
+**Y cuando no se puede pescar, lo dice.** `Reel.idle` devuelve el motivo —hoy
+solo "amarrado no se pesca"— y se pinta bajo la cana; con la cana pescando ahi
+no hay nada, y ese hueco tambien dice lo suyo. Existe porque el mando estaba
+roto sin estarlo: amarrado se sacaba el redal, el sedal caia al agua y ahi se
+quedaba para siempre, sin pique y sin una sola pista. Y amarrado es donde
+*empieza* la partida, asi que era el estado en el que mas facil era
+encontrarselo. Un mando que no puede funcionar tiene que decirlo; callarse es lo
+mismo que estar averiado. Con el redal fuera, ademas, la columna de estribor no
+se dibuja —o sea que el boton de **Zarpar** tampoco—, y un toque en cualquier
+sitio recoge la cana y lo devuelve.
 
 **La pelea no se guarda.** Vive entera en el modulo y no toca la simulacion:
 `Reel.update` devuelve un *suceso* —pez cobrado, pez perdido, linea rota— que la
@@ -555,9 +584,10 @@ siempre desde el carrete **puesto**, porque midiendolo desde el que sube el
 propio deslizamiento rodaria el carrete sin que el dedo se moviera y el pez
 vendria solo.
 
-**Y en reposo esta inmovil.** Entre pique y pique no se integra nada: el sedal
-cuelga con una comba fija, la cana va recta, el carrete no gira y lo unico que
-se mueve es un contador que no se ve. Lo unico que se atenua —la comba del
+**Y el aparejo en reposo esta inmovil.** Entre pique y pique no se integra nada:
+el sedal cuelga con una comba fija, la cana va recta, el carrete no gira y lo
+unico que se mueve —aparte del corcho, que es de agua— es un contador que no se
+ve. Lo unico que se atenua —la comba del
 sedal, el tiron del pique— llega a su valor **exacto** en vez de asintoticamente,
 porque a cinco pixeles de pantalla por pixel de arte una cola exponencial no es
 suave, es un parpadeo. Es la leccion de la driza, y aqui vuelve entera porque la

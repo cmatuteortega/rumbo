@@ -94,6 +94,7 @@ local Constants = require('src.constants')
 local Palette   = require('src.palette')
 local Util      = require('src.util')
 local Ship      = require('src.ship')
+local UI        = require('src.ui')
 
 local Reel = {}
 
@@ -200,6 +201,27 @@ local BEND, JOLT, JOLT_TIME = 8, 5, 0.3
 -- calculado para que salte a su valor exacto antes de que se pueda ver medio
 -- pixel de diferencia.
 local SAG, SLACK_EASE = 10, 9
+
+-- EL CORCHO, y es el arreglo de un fallo de verdad: con la cana fuera y sin
+-- pique la pantalla se quedaba EXACTAMENTE igual cuadro tras cuadro, y ocho
+-- segundos de eso no se leen como esperar, se leen como que el juego se ha
+-- colgado. Es la vuelta de la regla de la driza, pero al reves: lo que alli
+-- era un fallo -- una cosa en reposo temblando -- aqui lo es no moverse, y la
+-- diferencia no es de gusto. La driza cuelga QUIETA porque una cuerda colgada
+-- esta quieta; un corcho en el agua no lo esta NUNCA, y uno que se para esta
+-- roto. Asi que el aparejo sigue inmovil hasta el ultimo pixel -- cana,
+-- carrete y sedal no se mueven solos -- y lo unico que vive es el corcho, que
+-- es ademas lo unico que esta en el agua.
+--
+-- Y hace el otro trabajo, el que la vibracion no puede hacer en escritorio: al
+-- picar el corcho SE HUNDE y desaparece. Es la imagen de un pique en cualquier
+-- sitio del mundo y no hay que explicarla, asi que el pique se lee aunque el
+-- movil no vibre y aunque se este mirando la otra punta de la pantalla.
+--
+-- DROP es lo que cae el sedal de la punta al corcho, BOB el vaiven en pixeles
+-- de arte y BOB_EVERY su periodo. El vaiven es de dos pixeles y lento a
+-- proposito: mas rapido vuelve a ser temblor, que es lo que no queremos.
+local DROP, BOB, BOB_EVERY, FLOAT = 42, 2, 2.2, 3
 
 -- Lo que se aparta el aparejo para quedarse debajo del canto de abajo, y los
 -- mismos tiempos que la rueda y la driza: sale en 0,24 s y se guarda en 0,16.
@@ -327,11 +349,34 @@ function Reel.segHalf(state)
     return math.min(0.28, SEG_HALF + SEG_HALF_PER * Ship.power(state, "nets"))
 end
 
--- Solo se pesca navegando y con sitio en bodega. Amarrado no corre la
--- singladura (ver Ship.rates) y con la bodega llena el pez no cabria: mejor
--- que no pique a que pique para nada.
+-- POR QUE no se puede pescar ahora mismo, o nil si se puede. Devuelve el
+-- motivo y no un booleano porque el motivo SE PINTA: la cana se larga igual --
+-- guardarla sin dejar sacarla seria un mando que a veces no existe -- pero
+-- entonces tiene que decir por que no pasa nada.
+--
+-- Sin esto el mando estaba roto sin estarlo: amarrado se sacaba el redal, el
+-- sedal caia al agua y ahi se quedaba para siempre, sin pique y sin una sola
+-- pista. Y amarrado es justo donde empieza la partida, asi que era el estado
+-- en el que mas facil era encontrarselo. Un mando que no puede funcionar tiene
+-- que decirlo; callarse es lo mismo que estar averiado.
+function Reel.idle(state)
+    -- Amarrado no corre la singladura (ver Ship.rates): tampoco la cana.
+    if state.docked then return "Amarrado no se pesca" end
+    return nil
+end
+
+-- Con la BODEGA LLENA se pesca igual, y es una decision tomada a proposito
+-- contra el argumento contrario. El argumento era que cobrar un pez que no
+-- cabe es cobrar para nada, asi que mejor que no picara; pero la bodega llena
+-- es justo el estado en el que se vuelve despues de una ausencia larga, o sea
+-- que la pesca a mano se apagaba sola precisamente cuando mas rato se lleva
+-- mirando la pantalla. Pelear y que no quepa es peor negocio que no pelear,
+-- pero es el jugador quien lo elige; lo que no puede ser es que el mando se
+-- apague sin decir nada. Asi que pica, y `World.landFish` dice en la bitacora
+-- lo que no cupo.
+
 local function fishing(state)
-    return not state.docked and Ship.room(state) >= 1
+    return Reel.idle(state) == nil
 end
 
 -- La banda cambia de sitio por tramos de tiempo, y el tramo sale del reloj de
@@ -635,22 +680,56 @@ function Reel.draw(state)
     love.graphics.push()
     love.graphics.scale(Constants.ART, Constants.ART)
 
-    -- El sedal, desde la punta al agua. Cuelga con comba mientras no hay
-    -- nada y se pone tenso al picar; en rojo cuando la linea esta a punto de
-    -- romperse, que es el unico aviso que se pinta de mas.
+    -- El sedal y el corcho. Donde acaba el sedal es lo que cuenta el estado
+    -- entero del aparejo, y son tres:
+    --
+    --   sin pescar   el corcho cuelga de la punta, FUERA del agua, y quieto:
+    --                es como se ve una cana que no esta pescando.
+    --   esperando    el corcho esta en el agua y cabecea. Es lo unico que se
+    --                mueve (ver DROP/BOB), y es lo que dice que el aparejo
+    --                esta vivo mientras no pasa nada.
+    --   con pez      el corcho SE HA HUNDIDO -- no se pinta -- y el sedal se
+    --                va tenso al agua. Es la imagen de un pique en cualquier
+    --                sitio del mundo, y es la que hace que el pique se lea sin
+    --                vibracion, o sea tambien en escritorio.
+    local reason = Reel.idle(state)
     local tx, ty = rodAt(0, bow, lift)
-    local wx, wy = tx - 14, Constants.ART_H + 6
+    local ex, ey
+    if hooked then
+        ex, ey = tx - 14, Constants.ART_H + 6
+    elseif reason then
+        ex, ey = tx - 2, ty + 8
+    else
+        local wave = math.floor(math.sin(state.time * Util.TAU / BOB_EVERY) * BOB + 0.5)
+        ex, ey = tx - 5, ty + DROP + wave
+    end
+
+    -- La comba se reparte segun lo que cuelgue: con el corcho recogido bajo la
+    -- punta, diez pixeles de comba en ocho de caida seria un lazo.
+    local sag = SAG * slack * math.min(1, math.max(0, ey - ty) / DROP)
     love.graphics.setColor((tension > DANGER) and Palette.red or Palette.sailShade)
     do
-        local n = math.max(1, math.ceil(Util.dist(tx, ty, wx, wy)))
+        local n = math.max(1, math.ceil(Util.dist(tx, ty, ex, ey)))
         for i = 0, n do
             local t = i / n
-            local dip = math.sin(math.pi * t) * SAG * slack
-            love.graphics.rectangle("fill", math.floor(Util.lerp(tx, wx, t)),
-                                    math.floor(Util.lerp(ty, wy, t) + dip), 1, 1)
+            local dip = math.sin(math.pi * t) * sag
+            love.graphics.rectangle("fill", math.floor(Util.lerp(tx, ex, t)),
+                                    math.floor(Util.lerp(ty, ey, t) + dip), 1, 1)
         end
     end
     love.graphics.setColor(1, 1, 1, 1)
+
+    if not hooked then
+        local fx, fy = math.floor(ex), math.floor(ey)
+        ring(fx, fy, FLOAT + 1, 0, Palette.ink)
+        ring(fx, fy, FLOAT, 0, Palette.sand)
+        -- La luz arriba y a babor, como en el resto del arte. Va en `sail` y
+        -- NO en blanco aunque el blanco pegara mejor: el blanco es el color
+        -- del pez en este mando, y un corcho con una mota blanca a media
+        -- pantalla es una silueta de pez de un pixel. Lo canto la prueba --
+        -- que busca el pez por color -- pero el ojo se come el mismo error.
+        ring(fx - 1, fy - 1, 1, 0, Palette.sail)
+    end
 
     -- La cana: TODO el contorno antes que TODA la madera, porque pintando
     -- cada tramo entero de una vez el siguiente le comia un pixel con su
@@ -713,6 +792,18 @@ function Reel.draw(state)
     end
 
     love.graphics.pop()
+
+    -- Y por que no pasa nada, cuando no puede pasar. Va en espacio virtual
+    -- porque es texto: dentro de la escala de arte la fuente saldria a bloques
+    -- de cinco pixeles. Es la misma excusa que la lectura de rumbo de la
+    -- rueda -- "amarrado no se pesca" no tiene otra representacion que las
+    -- palabras -- y aparece SOLO cuando hace falta: con la cana pescando aqui
+    -- no hay nada, y ese hueco tambien dice lo suyo.
+    if reason then
+        local mx, my = rodAt(rod * 0.45, bow, lift)
+        UI.textCenter(reason, mx * Constants.ART, (my + 11) * Constants.ART,
+                      Palette.dim, Fonts.tiny)
+    end
 end
 
 return Reel

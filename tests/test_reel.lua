@@ -45,6 +45,12 @@ love.graphics = setmetatable({
     push = nop, pop = nop, scale = nop, draw = nop,
 }, { __index = function() return nop end })
 
+-- Fuentes de mentira: el motivo ("Amarrado no se pesca") se pinta con
+-- UI.textCenter, que lee el global Fonts.
+Fonts = setmetatable({}, { __index = function()
+    return setmetatable({}, { __index = function() return function() return 0 end end })
+end })
+
 local Constants = require('src.constants')
 local Palette   = require('src.palette')
 local Util      = require('src.util')
@@ -200,37 +206,53 @@ end
 
 --== Reposo =================================================================
 --
--- La leccion de la driza, otra vez: entre pique y pique NO se mueve un solo
--- pixel. Aqui es mas facil de cumplir --sin pez no se integra nada-- y por
--- eso mismo la prueba es barata: dos cuadros seguidos tienen que ser
--- IDENTICOS, rectangulo a rectangulo.
+-- La leccion de la driza, y aqui hay que separar dos cosas que parecen la
+-- misma. El APAREJO tiene que estar inmovil hasta el ultimo pixel entre pique
+-- y pique: la cana no se comba sola y el carrete no gira solo, exactamente
+-- como la driza cuelga quieta. Pero el CORCHO tiene que moverse, y no es una
+-- excepcion de gusto: un corcho en el agua no esta quieto nunca, y uno que se
+-- para esta roto. Ocho segundos de pantalla congelada no se leen como esperar
+-- un pique, se leen como que el juego se ha colgado -- que es exactamente el
+-- fallo que hubo que arreglar despues de probarlo con el pulgar.
+--
+-- Asi que se miden las dos cosas por separado, y por COLOR: la madera (cana y
+-- carrete) tiene que repetirse identica cuadro a cuadro, y el corcho tiene que
+-- haberse movido.
 
 print("== reposo ==")
+
+-- Los rectangulos de un color concreto, como una firma comparable.
+local function stamp(list, ...)
+    local want = { ... }
+    local out = {}
+    for _, p in ipairs(list) do
+        for _, c in ipairs(want) do
+            if p[5] == c then
+                out[#out + 1] = string.format("%d,%d,%d,%d", p[1], p[2], p[3], p[4])
+            end
+        end
+    end
+    return table.concat(out, " ")
+end
+
 do
     local state = sea(3)
-    local before
-    local moved, when = false, nil
+    local first, moved, bobbed = nil, nil, false
+    local firstFloat
     for i = 1, 120 do                          -- dos segundos, antes de BITE_MIN
         Reel.update(DT, true, state)
         World.step(state, DT)
         local now = frame(state)
-        if before then
-            local same = #now == #before
-            if same then
-                for j = 1, #now do
-                    local a, b = now[j], before[j]
-                    if a[1] ~= b[1] or a[2] ~= b[2] or a[3] ~= b[3] or a[4] ~= b[4] then
-                        same = false; break
-                    end
-                end
-            end
-            if not same and not moved then moved, when = true, i end
-        end
-        before = now
+        local wood = stamp(now, Palette.wood, Palette.woodLite, Palette.woodDark)
+        local cork = stamp(now, Palette.sand)
+        if not first then first, firstFloat = wood, cork end
+        if wood ~= first and not moved then moved = i end
+        if cork ~= firstFloat then bobbed = true end
     end
-    check("sin pique no se mueve un pixel", not moved,
-          "cambio en el cuadro " .. tostring(when))
-    check("y hay algo pintado", #before > 100, tostring(#before) .. " rectangulos")
+    check("el aparejo no mueve un pixel", moved == nil,
+          "la madera cambio en el cuadro " .. tostring(moved))
+    check("pero el corcho cabecea", bobbed,
+          "el corcho no se movio en dos segundos")
     check("y no hay pez todavia", fish() == nil)
 end
 
@@ -247,11 +269,12 @@ do
     for _ = 1, 30 do Reel.update(DT, true, port); World.step(port, DT) end
     check("en puerto no pica", bite(port, 25) == nil)
 
-    -- Con la bodega llena el pez no cabria, asi que no pica: cobrar para nada
-    -- es peor que no cobrar.
+    -- Con la bodega llena SI pica: es el estado en el que se vuelve de una
+    -- ausencia larga, y apagar ahi la pesca a mano la apagaba justo cuando mas
+    -- rato se lleva mirando la pantalla. Lo que no cabe lo dice la bitacora.
     local full = sea(13)
     full.res.fish = Ship.capacity(full)
-    check("con la bodega llena no pica", bite(full, 25) == nil)
+    check("con la bodega llena se pesca igual", bite(full, 25) ~= nil)
 
     -- Y con el redal guardado no pasa nada de nada.
     local stowed = World.new(14)
@@ -265,6 +288,50 @@ do
         if fish() then seen = true; break end
     end
     check("con el redal guardado no pica", not seen)
+end
+
+--== Decir por que no pasa nada ============================================
+--
+-- El fallo que se colo hasta el pulgar: amarrado se sacaba el redal, el sedal
+-- caia al agua y ahi se quedaba para siempre, sin pique y sin una sola pista.
+-- Y amarrado es donde EMPIEZA la partida. Un mando que no puede funcionar
+-- tiene que decirlo; callarse es lo mismo que estar averiado.
+
+print("== por que no pica ==")
+do
+    local docked = World.new(90)
+    check("amarrado, el redal dice por que", Reel.idle(docked) ~= nil,
+          tostring(Reel.idle(docked)))
+
+    local sailing = World.new(90)
+    World.undock(sailing)
+    check("navegando no dice nada", Reel.idle(sailing) == nil,
+          tostring(Reel.idle(sailing)))
+
+    local loaded = World.new(90)
+    World.undock(loaded)
+    loaded.res.fish = Ship.capacity(loaded)
+    check("y con la bodega llena tampoco: se pesca", Reel.idle(loaded) == nil,
+          tostring(Reel.idle(loaded)))
+
+    -- Amarrado el corcho se queda colgando de la punta, fuera del agua: la
+    -- cana no esta pescando y se ve que no lo esta.
+    Reel.reset()
+    for _ = 1, 30 do Reel.update(DT, true, docked) World.step(docked, DT) end
+    local high = frame(docked)
+    Reel.reset()
+    for _ = 1, 30 do Reel.update(DT, true, sailing) World.step(sailing, DT) end
+    local wet = frame(sailing)
+    local function corkY(list)
+        local y for _, p in ipairs(list) do
+            if p[5] == Palette.sand then y = math.max(y or p[2], p[2]) end
+        end
+        return y
+    end
+    check("y el corcho esta fuera del agua", corkY(high) and corkY(wet)
+          and corkY(high) < corkY(wet) - 20,
+          string.format("amarrado %s, navegando %s",
+                        tostring(corkY(high)), tostring(corkY(wet))))
 end
 
 --== Dejarlo correr =========================================================
@@ -281,6 +348,11 @@ do
     local x1 = fish()
     check("soltado, el pez tira hacia babor", x1 and x1 < x0 - 2,
           string.format("%.0f -> %.0f", x0 or -1, x1 or -1))
+
+    local under = true
+    for _, p in ipairs(painted) do if p[5] == Palette.sand then under = false end end
+    check("y al picar el corcho se ha hundido", under,
+          "el corcho sigue pintado con un pez enganchado")
 
     local ev, t = play(state, 20)
     check("y acaba escapandose", ev and ev.kind == "gone",
@@ -412,6 +484,15 @@ do
     local squeezed = World.landFish(state, 10)
     check("y no revienta el tope de bodega", squeezed <= 3.0001,
           string.format("entraron %.1f", squeezed))
+
+    -- Pelear un pez y que no pase nada visible es la misma averia que un mando
+    -- que se calla: con la bodega llena la bitacora tiene que decirlo.
+    state.res.fish = Ship.capacity(state)
+    local lines = #state.log
+    local none = World.landFish(state, 10)
+    check("un pez que no cabe tambien se cuenta",
+          none == 0 and #state.log > lines,
+          string.format("entraron %.1f, %d lineas nuevas", none, #state.log - lines))
 end
 
 print("")
