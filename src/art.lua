@@ -829,6 +829,8 @@ for _, fam in ipairs({
             function(w, h) return make(w, h, angle) end,
         }
     end
+end
+
 --== La reserva de caras ===================================================
 
 -- Se registran en bucle y no a mano porque son catorce filas identicas salvo
