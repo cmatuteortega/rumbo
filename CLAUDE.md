@@ -35,9 +35,11 @@ de espuma, asi que el mar se mide sin tarjeta grafica. Vigila cuatro cosas que
 no se ven a ojo: que **ni una** llamada pase rotacion (el love de mentira peta
 si alguien lo intenta), que el eje largo del campo caiga justo donde cae el
 viento en pantalla y el corto lo cruce en angulo recto, que con viento flojo
-haya de verdad menos espuma y que el blanco sea IMPOSIBLE, y que el agua desfile
-a sotavento y corra bajo el barco cuando anda. Ademas mide que la V de la estela
-se abra con lo que el barco anda y no con el reloj.
+haya de verdad menos espuma y que en el agua libre el blanco sea IMPOSIBLE, y
+que el agua desfile a sotavento y corra bajo el barco cuando anda. De la estela
+mide lo suyo: que la calle sea la manga del casco DIBUJADO, que la V acabe en
+punta en la roda, que se abra con lo que el barco anda y no con el reloj, y que
+virando la derrota se salga de la crujia.
 `test_deck.lua` tambien: `src/art.lua` no llama a `love` hasta que se le pide un
 sprite, asi que la geometria del casco y la reserva de caras se miden sin
 ventana. Esta ahi porque un tripulante que sale por la borda pasa cada varios
@@ -167,11 +169,21 @@ el agua) en vez de calcularse desde `state.x`: el eje del campo gira con el
 viento, y proyectar una posicion enorme sobre un eje que rola manda el mar
 disparado de lado en cuanto el viento rola un grado.
 
-La estela son dos cosas: el remolino de popa, que se queda donde se solto, y los
-brazos de la V, que se abren con lo que el barco ANDA (`state.distance`, no el
-reloj) y por eso se doblan solos en una virada. Delante, el bigote de la roda en
-tres tamanos y unas salpicaduras a sotavento; los dos callan por debajo de
-`WORKING`, que es donde un barco deja de levantar agua.
+La estela va DENTRO del agua y no encima: `src/sea.lua` le manda al shader la
+derrota (`wakeTrack` — los puntos por donde ha pasado el espejo, proyectados a
+pantalla, con lo andado desde cada uno y lo que le queda), y el shader mide la
+distancia de cada pixel a esa polilinea. De ahi salen el SURCO (dentro de la
+calle el campo se aplasta: es mar quitado, no espuma anadida), el HERVOR de popa
+y los BRAZOS de la V, que se abren con lo que el barco ANDA (`state.distance`,
+no el reloj) y por eso se doblan solos en una virada. La calle se cierra en
+punta en la roda —de ahi que la V acabe en pico delante de la proa— y por detras
+mide la MANGA ENTERA del sprite, leida de `Art.HULL_BOX`. Los brazos van
+multiplicados por la veta del propio oleaje para que salgan rotos: una linea
+limpia a este grano se lee como pintada encima. Ya no hay bigote de proa —la
+punta de la V lo es— y lo unico que sigue siendo sprite son las salpicaduras, a
+sotavento, porque una gota esta en el AIRE y no en el agua. La espuma de la
+estela calla por debajo de `WORKING` (`workFraction`), que es donde un barco
+deja de levantar agua; el surco no del todo, porque el casco sigue metido.
 
 Los mandos que se usan navegando salen tocando SU puesto en cubierta, no de la
 columna de botones, y por eso el timon y el velamen dejan su hoja para el

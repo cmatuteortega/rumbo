@@ -35,6 +35,21 @@
 -- quinientos y pico y la vuelta del campo no se ve porque cae a cinco mil
 -- pixeles de mundo, que son veinte pantallas largas.
 --
+-- **La estela va DENTRO del agua, no encima.** El barco no se limita a pasar:
+-- abre una calle. Lua le manda la derrota -- los ultimos puntos por donde ha
+-- pasado el espejo de popa, ya convertidos a pixeles de pantalla -- y el shader
+-- mide la distancia de cada pixel a esa polilinea. De ahi salen tres cosas: el
+-- SURCO (dentro de la calle el campo de espuma se aplasta, asi que las crestas
+-- mueren y queda agua lisa que tarda en cerrarse), el HERVOR de popa y los
+-- BRAZOS de la V. Pintar la V encima con puntitos era mentira: la espuma se
+-- sumaba al oleaje en vez de romperlo, y se veia pegada.
+--
+-- La V nace en la RODA y se abre con lo que el barco ha andado desde cada
+-- trozo de derrota (no con el reloj), asi que en una virada se dobla sola. Por
+-- delante del espejo la calle se cierra en punta siguiendo el casco, y por
+-- detras mide la manga ENTERA del sprite: es lo que hace que el surco se lea
+-- como el hueco que deja el barco y no como una raya.
+--
 -- **El origen se ARRASTRA, no se calcula.** Seria mas limpio sacarlo de
 -- `state.x`/`state.y`, pero el eje del campo gira con el viento y proyectar
 -- una posicion enorme sobre un eje que rola hace que el mar salga disparado de
@@ -67,6 +82,21 @@ Surface.PERIOD = 240
 -- por encima parece un rio.
 local DRIFT = { 4, 22 }
 
+-- Cuantos puntos de derrota caben en el shader. Van como array de uniformes
+-- porque es lo mas simple y lo mas rapido; si algun dia aparece un movil que
+-- no tenga vectores de sobra en fragmento, la salida es mandarla como textura
+-- de TRACK x 1 y cambiar el indice por un texture2D -- el resto del shader no
+-- se entera. La derrota se REMUESTREA a estos puntos (src/sea.lua), asi que
+-- subirlo alarga la estela y no la afina: la distancia a un segmento es exacta
+-- por muy separados que esten sus extremos.
+Surface.TRACK = 24
+
+-- La V. La tangente del semiangulo es la de siempre, y el tope dice cuanto se
+-- abren los brazos POR FUERA de la manga: la V no nace en la crujia, nace en
+-- el costado, que es donde el casco aparta el agua.
+Surface.SPREAD = 0.32
+Surface.ARM    = 26
+
 --==========================================================================
 -- El shader
 --==========================================================================
@@ -76,6 +106,7 @@ local SOURCE = [[
 #define WRAP 512.0
 #define OCT 3.0
 #define RATE (TAU / 240.0)
+#define TRACK 24
 
 // Frecuencias de la comba. NO son redondas a proposito: tienen que caber un
 // numero entero de veces en WRAP, o al envolver el origen la pantalla entera
@@ -94,6 +125,17 @@ extern float uGain;     // cuanta espuma deja el viento que sopla
 extern float uDark;     // a partir de que sombra sale el agua honda
 extern vec3 uCut;       // escalones: bajio, espuma, blanco
 extern vec3 uDeep, uWater, uShallow, uFoam, uWhite;
+
+// La derrota: por donde ha pasado el espejo de popa, en pixeles de arte y de
+// lo mas reciente a lo mas viejo. Los dos primeros puntos son el barco -- roda
+// y espejo --, que es lo que cierra la calle en V por delante.
+//   xy = donde,  z = lo que el barco ha andado desde ahi,  w = lo que le queda
+extern vec4 uTrack[TRACK];
+extern float uBeam;     // media manga del casco, en pixeles de arte
+extern float uHull;     // eslora: de espejo a roda
+extern float uSpread;   // tangente del semiangulo de la V
+extern float uArm;      // cuanto se abren los brazos por fuera de la manga
+extern float uWork;     // lo que anda el barco; parado no levanta agua
 
 // Los hashes del shader original, con la celda mordida en modulo: es lo que
 // hace el campo periodico y lo que mantiene los numeros pequenos.
@@ -144,10 +186,44 @@ float vnoise(vec2 p, float per) {
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
+// Lo mas cerca que pasa la derrota de este pixel: distancia, lo que el barco ha
+// andado desde el trozo mas cercano, y lo que le queda a esa espuma.
+//
+// Se mide contra los SEGMENTOS y no contra los puntos: con puntos sueltos la
+// estela sale a lunares en cuanto el barco corre, que es exactamente el fallo
+// que tenia dibujada con sprites. El relleno de la cola son puntos repetidos,
+// asi que los segmentos que sobran miden cero y nunca ganan.
+vec3 wakeAt(vec2 p) {
+    float best = 1e9, run = 0.0, left = 0.0;
+    for (int i = 0; i < TRACK - 1; i++) {
+        vec4 a = uTrack[i];
+        vec4 b = uTrack[i + 1];
+        vec2 ab = b.xy - a.xy;
+        float len2 = dot(ab, ab);
+        float t = (len2 > 0.0001) ? clamp(dot(p - a.xy, ab) / len2, 0.0, 1.0) : 0.0;
+        float d = length(p - (a.xy + ab * t));
+        if (d < best) {
+            best = d;
+            run  = mix(a.z, b.z, t);
+            left = mix(a.w, b.w, t);
+        }
+    }
+    return vec3(best, run, left);
+}
+
+// Media manga de la calle a lo largo de la derrota. En el espejo `run` vale
+// cero y la roda queda en -uHull, asi que por delante la calle se cierra en
+// punta siguiendo el casco -- la V de proa -- y a poco menos de media eslora
+// ya mide la manga entera, que es lo que deja por detras.
+float beamAt(float run) {
+    return uBeam * clamp((run + uHull) / (uHull * 0.45), 0.0, 1.0);
+}
+
 vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     // Al centro del pixel de arte, siempre: el mar se calcula en la rejilla,
     // no entre medias.
-    vec2 px = floor(tc * uSize) + 0.5 - uAnchor;
+    vec2 pix = floor(tc * uSize) + 0.5;
+    vec2 px  = pix - uAnchor;
     vec2 st = uOrigin + px.x * uBasisX + px.y * uBasisY;
 
     // La comba. Una linea de cresta recta de punta a punta es un peine; con
@@ -168,10 +244,41 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     // La mancha manda sobre la veta: donde el mar esta liso no hay espuma por
     // mucho que pase una frontera de celda por encima.
     float lift = pow(0.10 + 0.90 * vnoise(st, WRAP), 1.6) * uGain;
+
+    // Y aqui pasa el barco.
+    vec3 wk = wakeAt(pix);
+    // `manga` y no `half`: half es palabra reservada en GLSL ES y no compila.
+    float manga = beamAt(wk.y);
+    float lane = (1.0 - smoothstep(manga - 2.0, manga + 3.0, wk.x)) * wk.z;
+
+    // EL SURCO. Dentro de la calle el oleaje se aplasta: no es que se pinte
+    // espuma encima, es que el mar deja de haber. Se nota aunque el barco no
+    // ande, porque el casco sigue metido en el agua.
+    lift *= 1.0 - 0.85 * lane * (0.40 + 0.60 * uWork);
+
     float foam = vein * (0.5 + 0.5 * fine) * lift;
 
+    // EL HERVOR de popa: lo mas macizo de todo el mar, y dura poco -- media
+    // eslora y se ha deshecho. Va elevado a una y media para que se concentre
+    // en la crujia en vez de salir del ancho entero del espejo, y picado por la
+    // octava fina: un rectangulo blanco detras del barco se lee como un babero.
+    foam += 0.95 * pow(lane, 1.5) * uWork
+                 * (1.0 - smoothstep(0.0, 18.0, wk.y)) * (0.45 + 0.55 * fine);
+
+    // LOS BRAZOS. Nacen en la roda -- ahi beamAt vale cero y la V cierra en
+    // punta -- y se abren con lo que el barco ha ANDADO desde cada trozo de
+    // derrota, no con el reloj: por eso en una virada la V se dobla sola.
+    // Van multiplicados por la veta del propio mar para que salgan rotos a
+    // trozos; una linea limpia a este grano se lee como pintada encima.
+    float arm = manga + min(max(wk.y, 0.0) * uSpread, uArm);
+    foam += 1.00 * (1.0 - smoothstep(0.0, 3.5, abs(wk.x - arm)))
+                 * wk.z * uWork * (0.60 + 0.40 * vein);
+
     // Cinco escalones y ni un color entre medias. Con uCut.z por encima de uno
-    // -- que es lo que manda src/surface.lua en calma -- no hay blanco posible.
+    // -- que es lo que manda src/surface.lua en calma -- el AGUA no puede
+    // romper en blanco por mucho que se mire. La estela si: el hervor de popa
+    // pasa de uno a proposito, porque una estela es blanca haga el tiempo que
+    // haga.
     vec3 c = uWater;
     c = mix(c, uDeep,    step(uDark,  dark * lift));
     c = mix(c, uShallow, step(uCut.x, foam));
@@ -228,10 +335,33 @@ end
 -- Los uniformes
 --==========================================================================
 
+-- La derrota, estirada a los TRACK puntos que espera el shader. Lo que sobra se
+-- rellena repitiendo el ultimo punto: asi los segmentos de mas miden cero y
+-- nunca ganan la distancia, que es mas barato que preguntar en cada pixel
+-- cuantos puntos hay de verdad (y ademas GLSL ES no deja recorrer un bucle
+-- hasta un uniforme).
+local FAR = { -4000, -4000, 0, 0 }
+
+local function pad(track)
+    local out, last = {}, FAR
+    for i = 1, Surface.TRACK do
+        local p = track and track[i]
+        if p then
+            last = { p.x, p.y, p.run, p.left }
+        end
+        out[i] = last
+    end
+    return out
+end
+
 -- Todo lo que el shader necesita saber, en Lua y sin tocar love: aqui vive el
 -- balance del mar (cuanta espuma da cada viento, cuanto se estiran las vetas)
 -- y aqui se puede medir sin ventana. El shader solo evalua.
-function Surface.frame(state, sea)
+--
+-- `wake` es lo que trae src/sea.lua de la estela: la derrota ya proyectada a
+-- pixeles de arte, la manga y la eslora del casco con las que se dibuja, y lo
+-- que anda el barco. Puede faltar -- entonces el mar sale sin barco.
+function Surface.frame(state, sea, wake)
     local stretch = Surface.STRETCH[1] + Surface.STRETCH[2] * sea
     local cw = Surface.CELL
     local cn = cw * stretch
@@ -253,6 +383,12 @@ function Surface.frame(state, sea)
 
     return {
         size    = { Constants.ART_W, Constants.ART_H },
+        track   = pad(wake and wake.track),
+        beam    = (wake and wake.beam) or 0,
+        hull    = (wake and wake.hull) or 1,
+        spread  = Surface.SPREAD,
+        arm     = Surface.ARM,
+        work    = (wake and wake.work) or 0,
         anchor  = { cx, cy },
         origin  = { ou, ov },
         basisX  = { (ex * wx + ey * wy) / cw, (ex * nx + ey * ny) / cn },
@@ -301,17 +437,18 @@ local function ensure()
     return canvas ~= nil
 end
 
-function Surface.draw(state, sea)
+function Surface.draw(state, sea, wake)
     if not ensure() then
         -- Sin shader no hay mar, pero tampoco un agujero: queda el azul de
-        -- fondo y encima siguen la estela, el bigote y las islas.
+        -- fondo, y encima siguen las islas, los puertos y las salpicaduras.
+        -- La estela se pierde, porque vive dentro del agua.
         love.graphics.setColor(Palette.sea)
         love.graphics.rectangle("fill", 0, 0, Constants.ART_W, Constants.ART_H)
         love.graphics.setColor(1, 1, 1, 1)
         return
     end
 
-    local f = Surface.frame(state, sea)
+    local f = Surface.frame(state, sea, wake)
     shader:send("uSize",   f.size)
     shader:send("uAnchor", f.anchor)
     shader:send("uOrigin", f.origin)
@@ -322,6 +459,12 @@ function Surface.draw(state, sea)
     shader:send("uGain",   f.gain)
     shader:send("uDark",   f.dark)
     shader:send("uCut",    f.cut)
+    shader:send("uTrack",  unpack(f.track))
+    shader:send("uBeam",   f.beam)
+    shader:send("uHull",   f.hull)
+    shader:send("uSpread", f.spread)
+    shader:send("uArm",    f.arm)
+    shader:send("uWork",   f.work)
     shader:send("uDeep",     { Palette.deep[1],    Palette.deep[2],    Palette.deep[3] })
     shader:send("uWater",    { Palette.sea[1],     Palette.sea[2],     Palette.sea[3] })
     shader:send("uShallow",  { Palette.shallow[1], Palette.shallow[2], Palette.shallow[3] })

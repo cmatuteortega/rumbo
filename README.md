@@ -645,10 +645,12 @@ como el campo entero desfila a sotavento, tambien dice **hacia donde** va.
 La **fuerza** decide el resto. El viento sopla entre 0,55 y 1,0, que como fuerza
 de mar es un rango corto, asi que se estira a [0, 1] (`Sea.state`) para que la
 calma sea calma de verdad. Con poco viento el estiron baja -- las vetas se
-vuelven rizos redondos --, la espuma casi no sale y el blanco no puede salir:
-el escalon del blanco se manda **por encima de uno**, que es mas de lo que la
-cuenta de espuma puede dar en ningun pixel, asi que no es que salgan pocas
-rompientes, es que no cabe ninguna. Con viento fresco el estiron sube, las
+vuelven rizos redondos --, la espuma casi no sale y el agua **no puede** romper
+en blanco: el escalon del blanco se manda por encima de uno, que es mas de lo
+que la cuenta de espuma del oleaje puede dar en ningun pixel, asi que no es que
+salgan pocas rompientes, es que no cabe ninguna. (La estela si rompe en calma,
+y a proposito: se salta ese techo porque una estela es blanca haga el tiempo
+que haga.) Con viento fresco el estiron sube, las
 vetas se alargan, el dorso de cada ola se oscurece y aparecen las cabezas
 blancas. Un ruido de manchas por encima hace que un trozo de mar este picado y
 el de al lado casi liso, que es lo que separa un oleaje de un papel pintado.
@@ -670,25 +672,41 @@ mar salga disparado de lado en cuanto el viento rola un grado.
 
 ### La estela dice lo que hace el barco
 
-Detras del casco hay dos cosas y no una. El **remolino de popa** se queda donde
-se solto y se deshace; los **brazos de la V** se abren a un angulo fijo, pero
-proporcionalmente a lo que el barco **anda**, no a lo que tarda. La diferencia
-importa: un barco parado no abre V, uno lanzado la tiene larga, y en una virada
-se dobla sola porque cada punto de la estela guarda su propia derrota. Es la
-lectura que la version anterior no daba — una fila de puntos por la crujia se
-veia igual a dos nudos que a seis, y en una virada dejaba una raya recta que no
-era por donde se habia pasado.
+El barco no pasa por encima del mar: lo **rompe**. La estela no se pinta sobre
+el agua, se descuenta de ella. Lua le manda al shader la **derrota** -- los
+ultimos puntos por donde ha pasado el espejo de popa, ya proyectados a pixeles
+de pantalla, cada uno con lo que el barco ha andado desde entonces y lo que le
+queda de vida -- y el shader mide la distancia de cada pixel a esa polilinea.
+De ahi salen tres cosas:
 
-Delante, la roda: el **bigote de proa** en tres tamanos segun lo que se corra
-—la estela cuenta de donde vienes, el bigote cuanto corres ahora— y unas
-**salpicaduras** que salen a pulsos, no a chorro, y sobre todo por la banda de
-**sotavento**, que es hacia donde tumba el viento. Las dos cosas callan por
-debajo de un tercio de andar: un barco que apenas se mueve con espuma en la proa
-miente, y en el ojo del viento se pasa un buen rato asi.
+* **El surco.** Dentro de la calle que abre el casco, el campo de espuma se
+  aplasta: las crestas mueren y queda agua lisa que tarda en cerrarse. Es la
+  lectura que ninguna version anterior daba, porque estaba hecha de espuma
+  ANADIDA y esto es mar QUITADO.
+* **El hervor de popa**, lo mas macizo de todo el mar, que dura media eslora.
+* **Los brazos de la V**, que nacen en la **roda** -- la calle se cierra ahi en
+  punta siguiendo el costado del casco, y por eso la V acaba en pico justo
+  delante de la proa -- y se abren con lo que el barco ha **andado** desde cada
+  trozo de derrota, no con lo que ha tardado. En una virada la V se dobla sola
+  porque cada trozo lleva puesto su propio rumbo.
 
-El bigote es la unica cosa del mar que se dibuja pegada a la pantalla y no al
-mundo, y es legal por la misma razon que el barco: la proa apunta siempre
-arriba, asi que no tiene angulo que elegir.
+Por detras del espejo la calle mide la **manga entera del sprite**, leida de
+`Art.HULL_BOX`: si alguien redibuja el barco mas ancho, el surco se ensancha con
+el, y hay una prueba que lo comprueba.
+
+Dos decisiones que costaron verse. La primera: los brazos van multiplicados por
+la veta del propio oleaje, para que salgan rotos a trozos; una linea limpia a
+este grano de pixel se lee como pintada encima. La segunda: la espuma de la
+estela **si** puede romper en blanco con el mar en calma, aunque el agua libre
+no pueda -- una estela es blanca haga el tiempo que haga.
+
+Delante ya no hay bigote de tres tamanos: la punta de la V es el bigote, y sale
+de la misma cuenta. Lo que si sigue siendo sprite son las **salpicaduras**, que
+salen a pulsos y sobre todo por la banda de **sotavento**: una gota esta en el
+aire, por encima del agua, y ahi un sprite dice la verdad y un campo calculado
+en la superficie no. Las dos cosas callan por debajo de un tercio de andar: un
+barco que apenas se mueve con espuma en la proa miente, y en el ojo del viento
+se pasa un buen rato asi.
 
 ### Puestos
 

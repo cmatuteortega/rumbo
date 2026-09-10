@@ -71,8 +71,9 @@ Lo fue: cuatro familias de doce trazos cada una -- rizo, ola, rompiente y racha
 --, pintadas una cada quince grados porque el juego no gira nada al dibujar. La
 superficie la calcula hoy un shader por pixel (`src/surface.lua`), asi que esos
 cuarenta y ocho PNG **ya no existen** y no hay nada que dibujar ahi. Lo que
-sigue siendo sprite del mar es lo que tiene sitio propio: la espuma de la
-estela, la gota, el bigote de la roda, las islas, los escollos y los puertos.
+sigue siendo sprite del mar es la gota de las salpicaduras, las islas, los
+escollos y los puertos. La estela tampoco es un sprite: el casco abre una calle
+DENTRO del campo de espuma (ver `src/surface.lua`), no la pinta encima.
 
 Si algun dia vuelve a hacer falta algo del mundo CON orientacion -- un barco
 enemigo, pongamos --, la salida sigue siendo la de siempre: un sprite por
@@ -80,11 +81,7 @@ rumbo, nunca una rotacion en el dibujo.
 
 | id | tamano | archivo |
 |----|--------|---------|
-| `sea.foam` | 3x3 | `assets/sea_foam.png` |
 | `sea.drop` | 2x2 | `assets/sea_drop.png` |
-| `sea.bow1` | 9x3 | `assets/sea_bow1.png` |
-| `sea.bow2` | 13x4 | `assets/sea_bow2.png` |
-| `sea.bow3` | 17x5 | `assets/sea_bow3.png` |
 | `sea.island` | 40x32 | `assets/sea_island.png` |
 | `sea.rock` | 10x8 | `assets/sea_rock.png` |
 | `sea.port` | 32x26 | `assets/sea_port.png` |
@@ -111,10 +108,9 @@ rumbo, nunca una rotacion en el dibujo.
   del casco para poder cambiar entre trapo largo y rizos sin repintar el barco.
   Al arrizar se recoge el trapo, no se acorta la verga: en las dos versiones el
   palo y la verga caen en el mismo sitio, o tomar rizos parece cambiar de barco.
-* `sea.foam` — el remolino de la estela. `sea.drop` — una gota: brazos de la
-  estela y salpicadura de proa.
-* `sea.bow1/2/3` — el bigote de la roda, en tres tamanos segun lo que se corra.
-  Este **no** gira: va pegado a la pantalla, y la proa apunta siempre arriba.
+* `sea.drop` — una gota de salpicadura, y el unico sprite que le queda al mar.
+  Sobrevive porque una salpicadura esta **en el aire**, no en el agua: el surco,
+  el hervor de popa y la V de la roda los calcula el shader dentro del agua.
 * `sea.island`, `sea.rock`, `sea.port` — se dibujan **sin girar** desde
   cualquier rumbo, asi que evita formas con una direccion clara.
 * `crew.pjNN` — la **reserva de caras**: tripulantes en cenital, catorce, y ni

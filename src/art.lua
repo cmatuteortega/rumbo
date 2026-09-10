@@ -313,46 +313,21 @@ end
 function gen.shipSailsFull(w, h) return sails(w, h, false) end
 function gen.shipSailsReef(w, h) return sails(w, h, true) end
 
--- Mar: espuma de estela, gotas y bigote de proa.
+-- Mar: la gota, y nada mas.
 --
--- La superficie -- las crestas, las rachas, las manchas de mar picado -- ya no
--- esta aqui: la pinta por pixel el shader de src/surface.lua. Lo que queda son
--- las marcas que tienen SITIO propio en el mundo, y por eso siguen siendo
--- sprites: la espuma que suelta la popa, la gota que salta de la roda y las
--- dos alas del bigote.
-
-function gen.foam(w, h)
-    local c = newCanvas(w, h)
-    c:disc((w - 1) / 2, (h - 1) / 2, (w - 1) / 2, (h - 1) / 2, Palette.white)
-    return c
-end
+-- Aqui hubo cuatro familias de oleaje, la espuma de la estela y el bigote de
+-- proa. Todo eso lo calcula hoy por pixel el shader de src/surface.lua: las
+-- crestas, el surco que abre el casco, el hervor de popa y la V de la roda.
+--
+-- La gota sobrevive porque es la unica cosa del mar que NO es mar: una
+-- salpicadura esta en el aire, por encima del agua, y ahi un sprite dice la
+-- verdad y un campo calculado en la superficie no.
 
 function gen.drop(w, h)
-    -- La gota de una salpicadura y el punto de los brazos de la estela. Mas
-    -- pequena que la espuma a proposito: lo que se aleja del casco se deshace.
     local c = newCanvas(w, h)
     c:rect(0, 0, w, h, Palette.white)
     return c
 end
-
--- Bigote de proa: las dos alas de agua que la roda levanta al abrirse paso.
---
--- Es lo unico del mar que se dibuja pegado a la pantalla y no al mundo, y es
--- legal por la misma razon que el barco: la proa apunta SIEMPRE arriba, asi
--- que el bigote no tiene angulo que elegir. Hay tres tamanos y la velocidad
--- decide cual; sin el, un barco parado y uno a cinco nudos se ven igual.
-local function bowWave(w, h)
-    local c = newCanvas(w, h)
-    local cx = (w - 1) / 2
-    c:line(cx, 1, 0, h - 1, Palette.foam)
-    c:line(cx, 1, w - 1, h - 1, Palette.foam)
-    c:line(cx, 0, 0, h - 2, Palette.white)
-    c:line(cx, 0, w - 1, h - 2, Palette.white)
-    return c
-end
-
--- Un solo generador para los tres: el tamano lo pone el registro.
-function gen.bowWave(w, h) return bowWave(w, h) end
 
 function gen.island(w, h)
     local c = newCanvas(w, h)
@@ -653,11 +628,7 @@ local SPRITES = {
     { "ship.sailsReef", SHIP_W, SHIP_H, "sails_reef1.png", gen.shipSailsReef },
     { "ship.anchor",    SHIP_W, SHIP_H, "anchor1.png",     nil },
 
-    { "sea.foam",         3,  3, "sea_foam.png",        gen.foam },
     { "sea.drop",         2,  2, "sea_drop.png",        gen.drop },
-    { "sea.bow1",         9,  3, "sea_bow1.png",        gen.bowWave },
-    { "sea.bow2",        13,  4, "sea_bow2.png",        gen.bowWave },
-    { "sea.bow3",        17,  5, "sea_bow3.png",        gen.bowWave },
     { "sea.island",      40, 32, "sea_island.png",      gen.island },
     { "sea.rock",        10,  8, "sea_rock.png",        gen.rock },
     { "sea.port",        32, 26, "sea_port.png",        gen.port },

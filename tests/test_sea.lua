@@ -62,9 +62,12 @@ love.graphics = setmetatable({
                  getHeight = function() return data.h end }
     end,
     -- Shader y lienzo de mentira. El shader apunta lo que se le manda: es
-    -- todo lo que hace falta para medir el mar sin pintarlo.
-    newShader = function() return { send = function(_, name, value)
-        sent[name] = value
+    -- todo lo que hace falta para medir el mar sin pintarlo. Un uniforme
+    -- suelto se guarda tal cual; un array (la derrota) llega como varios
+    -- argumentos y se guarda como lista.
+    newShader = function() return { send = function(_, name, ...)
+        if select('#', ...) == 1 then sent[name] = (...)
+        else sent[name] = { ... } end
     end } end,
     newCanvas = function(w, h)
         return { setFilter = nop, release = nop,
@@ -242,9 +245,10 @@ do
     check("con viento flojo hay menos espuma", flojo.gain < fresco.gain * 0.5,
           string.format("%.2f contra %.2f", flojo.gain, fresco.gain))
 
-    -- No es que salgan pocas rompientes: es que ninguna cuenta de espuma puede
-    -- pasar de uno, asi que con el escalon por encima de uno no hay blanco.
-    check("y en calma no PUEDE romper ni una ola",
+    -- No es que salgan pocas rompientes: la cuenta de espuma del OLEAJE no
+    -- puede pasar de uno, asi que con el escalon por encima de uno no hay
+    -- blanco posible. (La estela se salta ese techo a proposito.)
+    check("y en calma el agua no PUEDE romper ni una ola",
           flojo.white > 1.0 and fresco.white < 1.0,
           string.format("escalon %.2f en calma, %.2f con viento",
                         flojo.white, fresco.white))
@@ -308,53 +312,109 @@ end
 
 --== Estela ================================================================
 
+-- La estela ya no son sprites: es la derrota que se le manda al shader, y de
+-- ahi salen el surco, el hervor de popa y los brazos de la V. Asi que se mide
+-- ahi, que es donde esta la verdad.
+
+print("\nel barco rompe el mar")
+do
+    local hullW, hullH = Art.size("ship.hull")
+    local s = sail(0, 1.0, math.pi / 2, 10)
+    shot(s)
+
+    -- El grosor de la calle es el del casco DIBUJADO, no un numero a ojo: si
+    -- alguien redibuja el barco mas ancho, el surco se ensancha con el.
+    check("la calle mide la manga entera del sprite",
+          math.abs(sent.uBeam - Art.HULL_BOX.w * hullW / 2) < 0.001,
+          string.format("%.1f px de media manga", sent.uBeam))
+    check("y la eslora es la del casco dibujado",
+          math.abs(sent.uHull - Art.HULL_BOX.h * hullH) < 0.001,
+          string.format("%.1f px de eslora", sent.uHull))
+
+    -- La V cierra en punta en la RODA. Eso es que el primer punto de la
+    -- derrota este en la proa y cuente una eslora entera de derrota negativa:
+    -- con `run = -eslora` la manga que reparte el shader vale cero justo ahi.
+    local cx, cy = Constants.shipAnchor()
+    local roda = sent.uTrack[1]
+    check("la V acaba en punta en la roda",
+          roda[1] == cx and math.abs(roda[3] + sent.uHull) < 0.001,
+          string.format("roda en (%.0f, %.0f) con run %.0f",
+                        roda[1], roda[2], roda[3]))
+    check("y el segundo punto es el espejo de popa",
+          sent.uTrack[2][3] == 0
+          and math.abs(sent.uTrack[2][2] - (cy + sent.uHull / 2)) < 0.001)
+end
+
 print("\nla estela dice lo que hace el barco")
 do
-    local s = sail(0, 1.0, math.pi / 2, 10)
-
-    -- Los brazos de la V se miden por lo ANCHO que abre la estela: el punto
-    -- mas apartado de la crujia. Todo en pixeles de arte.
-    local function halfWidth(state)
-        painted = {}
-        Sea.draw(state)
-        local cx = Constants.shipAnchor()
-        local wide = 0
-        for _, p in ipairs(painted) do
-            if p.id == "sea.drop" or p.id == "sea.foam" then
-                wide = math.max(wide, math.abs(p.x - cx))
-            end
-        end
-        return wide
+    -- Lo que abre la V es `run`: lo que el barco ha andado desde cada trozo de
+    -- derrota. Se mide el mayor, que es el del trozo mas viejo que sigue vivo.
+    local function largo(state)
+        shot(state)
+        local most = 0
+        for i = 1, #sent.uTrack do most = math.max(most, sent.uTrack[i][3]) end
+        return most
     end
 
-    local ancho = halfWidth(s)
-    check("la V se abre por detras del barco", ancho > 6, ancho .. " px")
+    local s = sail(0, 1.0, math.pi / 2, 10)
+    check("la V se abre por detras del barco", largo(s) > 30,
+          string.format("%.0f px de derrota", largo(s)))
 
     -- Y se abre con lo que el barco ANDA, no con el reloj: parado no se abre.
     -- (Se para el barco pero se sigue llamando a Sea.update, que es lo que
     -- pasaria de verdad al quedarse en el ojo del viento.)
-    local antes = halfWidth(s)
+    local antes = largo(s)
     for _ = 1, 30 do Sea.update(s, 1 / 30) end
-    check("y no sigue abriendose con el barco parado",
-          halfWidth(s) <= antes, antes .. " -> " .. halfWidth(s))
+    check("y no sigue abriendose con el barco parado", largo(s) <= antes,
+          string.format("%.0f -> %.0f", antes, largo(s)))
 
-    -- Amarrado no se siembra estela nueva, pero la vieja se deshace sola.
+    -- En una virada la derrota deja de ser una raya por la crujia, y por eso
+    -- la V se dobla sola: cada trozo lleva su propio rumbo puesto.
+    local cx = Constants.shipAnchor()
+    local vira = sail(0, 1.0, math.pi / 2, 6)
+    for _ = 1, 30 * 6 do
+        vira.heading = vira.heading + 0.6 / 30
+        local fx, fy = Util.headingToVector(vira.heading)
+        local d = Ship.speed(vira) * (1 / 30)
+        vira.x, vira.y = vira.x + fx * d, vira.y + fy * d
+        vira.distance = vira.distance + d
+        vira.time = vira.time + 1 / 30
+        Sea.update(vira, 1 / 30)
+    end
+    shot(vira)
+    local torcido = 0
+    for i = 3, #sent.uTrack do
+        torcido = math.max(torcido, math.abs(sent.uTrack[i][1] - cx))
+    end
+    check("y virando la derrota se sale de la crujia", torcido > 8,
+          string.format("%.0f px de desvio", torcido))
+
+    -- Amarrado no se siembra derrota nueva y la vieja se deshace: al final no
+    -- queda mas que el barco, y el relleno repite el espejo de popa.
     s.docked = "x"
     for _ = 1, 30 * 20 do Sea.update(s, 1 / 30) end
-    check("y amarrado acaba sin una brizna de espuma", halfWidth(s) == 0)
+    shot(s)
+    check("y amarrado no queda derrota, solo el barco",
+          sent.uTrack[3][1] == sent.uTrack[2][1]
+          and sent.uTrack[3][2] == sent.uTrack[2][2])
 end
 
---== Bigote de proa ========================================================
+--== Espuma de proa =========================================================
 
-print("\nel bigote de proa mide la velocidad")
+print("\nla espuma mide la velocidad")
 do
-    -- Un barco quieto no levanta agua; uno lanzado si, y con el bigote grande.
-    local parado = sail(0, 1.0, 0)      -- proa al viento: 10 % de andar
+    -- Lo que era el bigote de tres tamanos es ahora la punta de la V, y sigue
+    -- callandose por debajo de un tercio de andar: un barco que apenas se mueve
+    -- con espuma en la proa miente.
+    local parado  = sail(0, 1.0, 0)              -- proa al viento: 10 % de andar
     local lanzado = sail(0, 1.0, math.pi / 2)
-    local a, b = shot(parado), shot(lanzado)
-    local quieto = a["sea.bow1"] + a["sea.bow2"] + a["sea.bow3"]
-    check("en el ojo del viento no hay bigote", quieto == 0, quieto .. " pintados")
-    check("y a buen andar sale el grande", b["sea.bow3"] == 1)
+    shot(parado)
+    local quieto = sent.uWork
+    shot(lanzado)
+    check("en el ojo del viento no levanta agua", quieto == 0,
+          string.format("%.2f", quieto))
+    check("y a buen andar la levanta entera", sent.uWork > 0.5,
+          string.format("%.2f", sent.uWork))
 end
 
 --== Recuento ==============================================================
