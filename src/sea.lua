@@ -11,20 +11,24 @@
 -- Eso obligaba a que nada del mundo tuviera una orientacion propia -- islas y
 -- puertos siguen siendo manchas, que se leen igual desde cualquier demora --,
 -- pero el MAR si la tiene, y esconderla costaba caro: un oleaje que siempre
--- cruzaba la pantalla en horizontal no decia de donde soplaba el viento, se
--- veia igual con racha que en calma, y en una rejilla regular de trazos
--- iguales se leia la rejilla. Aqui las crestas se peinan contra el viento --
--- asi que van en diagonal cuando el viento va en diagonal --, y se dibujan por
--- la primera de las dos salidas que deja la regla: doce sprites, uno por
--- orientacion, elegidos por el angulo (ver SEA_DIRS en src/art.lua). Ni una
--- llamada de este archivo pasa rotacion.
+-- cruzaba la pantalla en horizontal no decia de donde soplaba el viento y se
+-- veia igual con racha que en calma. La superficie es hoy la tercera salida a
+-- ese apuro, y esta en `src/surface.lua`: un shader. No hay sprite que girar
+-- porque no hay sprite -- el agua se calcula por pixel --, asi que el mar
+-- puede peinarse en cualquier direccion sin tocar la regla. Antes de eso
+-- fueron doce sprites por trazo, uno cada quince grados, que es la primera
+-- salida que deja la regla y sigue siendo la buena para todo lo que si sea un
+-- dibujo.
 --
--- El bigote de proa es la excepcion contraria y por eso es facil: va pegado a
--- la pantalla y no al mundo, y la proa apunta siempre arriba, asi que no tiene
--- angulo que elegir.
+-- Lo que queda en este archivo es todo lo que va ENCIMA del agua y no cabe en
+-- un shader porque tiene memoria o tiene sitio propio: la camara, la estela,
+-- las salpicaduras, el bigote de proa, las islas y los puertos.
 --
--- Ademas, nada del mar se guarda: olas, rachas, islas, escollos, estela y
--- salpicaduras son funcion pura de la posicion del mundo, de la semilla y del
+-- El bigote es la excepcion facil: va pegado a la pantalla y no al mundo, y la
+-- proa apunta siempre arriba, asi que no tiene angulo que elegir.
+--
+-- Ademas, nada del mar se guarda: superficie, islas, escollos, estela y
+-- salpicaduras son funcion de la posicion del mundo, de la semilla y del
 -- tiempo. El mar es infinito y ocupa cero bytes.
 
 local Constants = require('src.constants')
@@ -33,13 +37,10 @@ local Util      = require('src.util')
 local Art       = require('src.art')
 local Ports     = require('src.ports')
 local Ship      = require('src.ship')
+local Surface   = require('src.surface')
 
 local Sea = {}
 
-Sea.WAVE_CELL    = 10   -- una ola por celda de mundo, si el mar da para ella
-Sea.SWELL_CELL   = 96   -- tamano de las manchas de mar picado y de mar llano
-Sea.GUST_CELL    = 46
-Sea.CALM_CELL    = 110  -- manchas de agua honda
 Sea.SCENERY_CELL = 250  -- islas y escollos
 
 --==========================================================================
@@ -57,20 +58,14 @@ function Sea.project(state, wx, wy)
     return cx + across, cy - along
 end
 
--- Angulo en PANTALLA de una direccion del mundo. Es lo unico que hace falta
--- para elegir sprite orientado: la misma direccion del mundo cae a un angulo
--- distinto en cada rumbo, y eso es exactamente lo que hace que virar repeine
--- el mar.
+-- Angulo en PANTALLA de una direccion del mundo. La misma direccion del mundo
+-- cae a un angulo distinto en cada rumbo, y eso es exactamente lo que hace que
+-- virar repeine el mar. No lo usa el dibujo -- el shader lleva la direccion en
+-- sus ejes --, pero es la contrapartida de Sea.project y es con lo que
+-- tests/test_sea.lua comprueba hacia donde ha quedado peinada la superficie.
 function Sea.screenAngle(state, ux, uy)
     local sinH, cosH = math.sin(state.heading), math.cos(state.heading)
     return math.atan2(-(ux * sinH - uy * cosH), ux * cosH + uy * sinH)
-end
-
--- Sprite de una familia orientada. Un trazo no tiene punta, asi que su
--- orientacion vive en media vuelta: doce sprites cubren los 180 grados.
-function Sea.orient(id, angle)
-    local d = math.floor(angle / math.pi * Art.SEA_DIRS + 0.5) % Art.SEA_DIRS
-    return id .. (d + 1)
 end
 
 -- Radio en pixeles de mundo que hay que barrer para cubrir la pantalla desde
@@ -87,10 +82,9 @@ local function onScreen(x, y, margin)
 end
 
 -- Recorre las celdas de tamano `cell` que cubren la pantalla alrededor de un
--- punto. Todo el mar se dibuja con esto, y va aparte porque los campos que
--- DESFILAN (olas, rachas) no se barren alrededor del barco sino alrededor del
--- barco menos el desplazamiento del campo: asi el campo avanza sin saltos, en
--- vez del tiron que daba reciclar el desfile con un modulo.
+-- punto. Es como se siembra todo lo que esta CLAVADO en el mundo -- islas y
+-- escollos --, que es lo unico que queda de sembrar por celdas desde que el
+-- agua la pinta un shader.
 local function forEachCell(bx, by, cell, extra, fn)
     local radius = Sea.viewRadius() + (extra or 0)
     local c0x = math.floor((bx - radius) / cell)
@@ -99,62 +93,6 @@ local function forEachCell(bx, by, cell, extra, fn)
     local c1y = math.floor((by + radius) / cell)
     for cy = c0y, c1y do
         for cx = c0x, c1x do fn(cx, cy) end
-    end
-end
-
--- Ruido de valor: hash en las esquinas de una rejilla e interpolado suave por
--- dentro. Es lo que da MANCHAS -- un trozo de mar picado, otro liso -- en vez
--- de una rugosidad uniforme, que es lo que delataba la rejilla de olas.
-local function noise(x, y, salt)
-    local x0, y0 = math.floor(x), math.floor(y)
-    local fx, fy = x - x0, y - y0
-    fx = fx * fx * (3 - 2 * fx)
-    fy = fy * fy * (3 - 2 * fy)
-    local a = Util.hash01(x0,     y0,     salt)
-    local b = Util.hash01(x0 + 1, y0,     salt)
-    local c = Util.hash01(x0,     y0 + 1, salt)
-    local d = Util.hash01(x0 + 1, y0 + 1, salt)
-    return Util.lerp(Util.lerp(a, b, fx), Util.lerp(c, d, fx), fy)
-end
-
---==========================================================================
--- Cola de trazos
---==========================================================================
-
--- El mar no se pinta segun se recorre: se APUNTA por sprite y se pinta al
--- final, todos los trazos de un sprite seguidos.
---
--- Es la unica factura que pasa tener el mar orientado. LÖVE junta en un solo
--- envio los dibujos consecutivos de la MISMA imagen, y con doce orientaciones
--- por tres tamanos entremezcladas al azar cada trazo rompia el envio del
--- anterior: trescientos y pico envios por cuadro donde antes habia dos. Con la
--- cola son una docena, que es lo que habia. Las colas se reutilizan de un
--- cuadro para otro (solo se pone n a cero) para no dar de comer al recolector
--- treinta veces por segundo.
---
--- De propina fija el ORDEN: rizos debajo, olas encima, rompientes despues y
--- rachas al final, que es la unica capa que cruza a las demas.
-local ORDER = { "sea.ripple", "sea.wave", "sea.swell", "sea.gust" }
-local queue = {}
-
-local function enqueue(id, x, y)
-    local q = queue[id]
-    if not q then q = { n = 0 }; queue[id] = q end
-    local n = q.n
-    q[n + 1], q[n + 2] = x, y
-    q.n = n + 2
-end
-
-local function flushStrokes()
-    for _, fam in ipairs(ORDER) do
-        for d = 1, Art.SEA_DIRS do
-            local id = fam .. d
-            local q = queue[id]
-            if q and q.n > 0 then
-                for i = 1, q.n, 2 do Art.drawCentered(id, q[i], q[i + 1]) end
-                q.n = 0
-            end
-        end
     end
 end
 
@@ -168,11 +106,6 @@ end
 -- rizos sueltos, agua quieta, ni una rompiente -- y la racha se note.
 function Sea.state(state)
     return Util.clamp((state.wind.strength - 0.50) / 0.50, 0, 1)
-end
-
--- Direccion HACIA la que sopla, en el mundo. Es la del desfile de todo el mar.
-local function windVector(state)
-    return Util.headingToVector(Util.wrapAngle(state.wind.from + math.pi))
 end
 
 -- Velocidad del barco como fraccion de lo que da una buena singladura. No se
@@ -229,6 +162,7 @@ local lastX, lastY, lastDist
 local sprayAcc, sprayN = 0, 0
 
 function Sea.reset()
+    Surface.reset()
     wake, spray = {}, {}
     lastX, lastY, lastDist = nil, nil, nil
     sprayAcc, sprayN = 0, 0
@@ -308,6 +242,10 @@ function Sea.update(state, dt)
     if lastDist and state.distance - lastDist > 200 then Sea.reset() end
     lastDist = state.distance
 
+    -- La superficie no guarda olas, pero si de donde las esta mirando: hay que
+    -- arrastrarle el origen con lo que anda el barco y lo que desfila el agua.
+    Surface.update(state, dt, Sea.state(state))
+
     -- La estela se siembra con mucho menos andar que el bigote: un barco que
     -- apenas se mueve NO levanta agua por la proa, pero si deja un rastro
     -- detras, y sin el se ve quieto en un mar que desfila.
@@ -344,134 +282,6 @@ local function foamColor(k)
     if k < 0.35 then return Palette.white end
     if k < 0.72 then return Palette.foam end
     return Palette.shallow
-end
-
--- Manchas de agua honda. Van debajo de todo y se mueven con el mundo, no con
--- el viento: es el fondo lo que cambia, no la superficie. Solo salen donde el
--- mar esta LISO, que es cuando de verdad se ve el color del fondo; donde
--- rompe, la espuma lo tapa.
-local function drawCalm(state)
-    local cell = Sea.CALM_CELL
-    forEachCell(state.x, state.y, cell, 40, function(cx, cy)
-        local roll = Util.hash01(cx, cy, 31)
-        if roll > 0.42 then return end
-        local wx = (cx + Util.hash01(cx, cy, 32)) * cell
-        local wy = (cy + Util.hash01(cx, cy, 33)) * cell
-        if noise(wx / Sea.SWELL_CELL, wy / Sea.SWELL_CELL, 9) > 0.52 then return end
-        local x, y = Sea.project(state, wx, wy)
-        if onScreen(x, y, 40) then
-            Art.drawCentered(roll < 0.20 and "sea.calm" or "sea.calmet", x, y)
-        end
-    end)
-end
-
-local function drawWaves(state)
-    local sea = Sea.state(state)
-    local tx, ty = windVector(state)
-    -- Las crestas se peinan CONTRA el viento: la cresta cruza la direccion en
-    -- la que corre la ola, que es la del viento. De ahi el cuarto de vuelta.
-    local crest = Sea.screenAngle(state, tx, ty) + math.pi / 2
-
-    -- El campo entero desfila a sotavento. No se recicla con un modulo -- eso
-    -- da un tiron cada vuelta --: lo que se desplaza es el punto ALREDEDOR del
-    -- cual se barren las celdas, asi que el mar avanza sin costura.
-    local drift = state.time * (5 + 26 * sea)
-    local ox, oy = tx * drift, ty * drift
-    local cell = Sea.WAVE_CELL
-    local t = state.time
-
-    forEachCell(state.x - ox, state.y - oy, cell, 0, function(cx, cy)
-        local wx = (cx + Util.hash01(cx, cy, 1)) * cell
-        local wy = (cy + Util.hash01(cx, cy, 2)) * cell
-
-        -- Mancha: un trozo de mar picado y el de al lado casi liso. Es la
-        -- diferencia entre un oleaje y un papel pintado de olas.
-        local rough = noise(wx / Sea.SWELL_CELL, wy / Sea.SWELL_CELL, 9)
-        local density = 0.36 + 0.48 * sea * (0.30 + 0.70 * rough)
-        if Util.hash01(cx, cy, 3) >= density then return end
-
-        -- Que ola es, y la mezcla importa mas que cada una: la mayoria tienen
-        -- que ser rizos -- trazo corto, color de agua, casi sin contraste --
-        -- y solo unas pocas romper en blanco. Con la mayoria en espuma clara
-        -- el mar se llena de marcas iguales y brillantes, y un campo de marcas
-        -- iguales y brillantes no se lee como agua: se lee como lluvia.
-        --
-        -- El exponente concentra las olas hechas en las manchas picadas en vez
-        -- de repartirlas: es lo que hace que se navegue de un trozo de mar a
-        -- otro y no por un mar medio en todas partes.
-        local grade = sea * (0.10 + 0.90 * rough) ^ 1.6
-                          * (0.30 + 0.70 * Util.hash01(cx, cy, 4))
-        local id = (grade > 0.50 and "sea.swell")
-                or (grade > 0.24 and "sea.wave")
-                or "sea.ripple"
-
-        -- Tren de olas: la fase corre a lo largo del viento, asi que las
-        -- crestas de una misma linea suben y bajan juntas y las de detras van
-        -- un poco despues. Con una fase suelta por ola el mar hierve; con
-        -- esta, respira.
-        local along = wx * tx + wy * ty
-        local surge = math.sin(along * 0.075 - t * (0.9 + 1.1 * sea)) * (0.5 + 2.2 * sea)
-
-        local x, y = Sea.project(state,
-                                 wx + ox + tx * surge,
-                                 wy + oy + ty * surge)
-        if not onScreen(x, y, 22) then return end
-
-        -- Cada cresta se tuerce un poco de su cuenta. Un mar de trazos
-        -- exactamente paralelos es un peine, no un mar: la mar corta de verdad
-        -- va desordenada. Un paso de sprite arriba o abajo basta, y mas ya
-        -- borra de donde sopla.
-        local skew = (Util.hash01(cx, cy, 8) - 0.5) * 0.46
-        local sprite = Sea.orient(id, crest + skew)
-
-        -- Una cresta es larga y se rompe a trozos, asi que la ola corriente se
-        -- pinta a veces DOS veces seguidas a lo largo de si misma: con hueco
-        -- entre tramo y tramo, y escalonadas un pixel a un lado. Con hueco y
-        -- escalon es una cresta rota; pegadas y en linea salia una raya larga,
-        -- y una pantalla de rayas largas y finas no es un mar, es lluvia.
-        --
-        -- Se dobla SOLO la ola corriente, que es la oscura. El rizo es el grano
-        -- del agua y encadenado vuelve a ser una raya; y la rompiente lleva
-        -- blanco, asi que encadenada pinta una linea de puntos brillantes --
-        -- que es, otra vez, exactamente lluvia. Lo blanco va siempre suelto.
-        local ang = crest + skew
-        local n = (id == "sea.wave" and Util.hash01(cx, cy, 10) > 0.45) and 2 or 1
-        if n == 1 then
-            enqueue(sprite, x, y)
-        else
-            local sw = Art.size(sprite)
-            local ux, uy = math.cos(ang), math.sin(ang)
-            local gap = sw + 1
-            for i = 0, 1 do
-                local k = i - 0.5
-                local step = (Util.hash01(cx, cy, 40 + i) > 0.5) and 1 or -1
-                enqueue(sprite, x + ux * gap * k - uy * step,
-                                y + uy * gap * k + ux * step)
-            end
-        end
-    end)
-end
-
-local function drawGusts(state)
-    local sea = Sea.state(state)
-    local tx, ty = windVector(state)
-    -- Al reves que las crestas: la racha corre A FAVOR del viento, asi que en
-    -- pantalla cruza las olas en angulo recto. Es lo que ensena de donde sopla.
-    local streak = Sea.screenAngle(state, tx, ty)
-    local drift = state.time * (26 + 70 * sea)
-    local ox, oy = tx * drift, ty * drift
-    local cell = Sea.GUST_CELL
-
-    forEachCell(state.x - ox, state.y - oy, cell, 0, function(cx, cy)
-        -- En calma no hay rachas que ver; con viento fresco, muchas.
-        if Util.hash01(cx, cy, 5) <= 0.94 - 0.10 * sea then return end
-        local wx = (cx + Util.hash01(cx, cy, 6)) * cell + ox
-        local wy = (cy + Util.hash01(cx, cy, 7)) * cell + oy
-        local x, y = Sea.project(state, wx, wy)
-        if onScreen(x, y, 12) then
-            enqueue(Sea.orient("sea.gust", streak), x, y)
-        end
-    end)
 end
 
 local function drawScenery(state)
@@ -575,14 +385,7 @@ local function drawHeadingGuide(state)
 end
 
 function Sea.draw(state)
-    love.graphics.setColor(Palette.sea)
-    love.graphics.rectangle("fill", 0, 0, Constants.ART_W, Constants.ART_H)
-    love.graphics.setColor(1, 1, 1, 1)
-
-    drawCalm(state)
-    drawWaves(state)
-    drawGusts(state)
-    flushStrokes()
+    Surface.draw(state, Sea.state(state))
     drawScenery(state)
     drawPorts(state)
     drawWake(state)

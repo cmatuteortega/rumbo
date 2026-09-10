@@ -6,21 +6,27 @@
 -- simulacion no puede requerir love y se prueba tal cual, pero el mar es
 -- DIBUJO, asi que hace falta un love de mentira que apunte lo que se pinta.
 --
--- Y esta aqui porque el mar orientado mete tres cosas que no se ven mirando la
--- pantalla un rato:
+-- Desde que el agua la pinta un shader (src/surface.lua) el love de mentira
+-- apunta ademas los UNIFORMES: lo que se le manda al shader es exactamente lo
+-- que decide como se ve el mar, y se puede medir sin una tarjeta grafica
+-- delante. Es la misma idea de siempre -- leer del dibujo en vez de mirar la
+-- pantalla --, solo que ahora el dibujo son doce numeros.
 --
---   * la REGLA 1. Con doce sprites por familia es facil creerse que ya que
---     estamos se puede pasar un angulo a love.graphics.draw y ahorrarse once.
---     El love de mentira PETA si alguien lo intenta, en el mar y en el barco.
---   * que las crestas apunten a donde tienen que apuntar. Se peinan CONTRA el
---     viento y las rachas corren A FAVOR, asi que las dos familias tienen que
---     salir siempre a noventa grados una de otra, y las dos tienen que girar
---     cuando gira el barco -- que es lo unico que hace que el mar se vea
---     distinto en cada rumbo. Mirando la pantalla se ve que hay diagonales;
---     que sean LAS diagonales, no.
---   * que con poco viento el mar este de verdad mas quieto. Es una diferencia
---     de cuentas -- menos trazos, ninguno blanco -- y a ojo, en dos capturas
---     separadas por diez minutos de juego, es indistinguible de la suerte.
+-- Lo que vigila:
+--
+--   * la REGLA 1. Ni una llamada con rotacion, tampoco la del shader. El love
+--     de mentira PETA si alguien lo intenta.
+--   * que el mar se peine con el viento. El campo de espuma se estira A TRAVES
+--     del viento, asi que sus dos ejes tienen que salir a noventa grados, el
+--     largo tiene que caer justo donde cae el viento en pantalla, y los dos
+--     tienen que girar cuando gira el barco -- que es lo unico que hace que el
+--     mar se vea distinto en cada rumbo. Mirando la pantalla se ve que hay
+--     diagonales; que sean LAS diagonales, no.
+--   * que con poco viento el mar este de verdad mas quieto, y que en calma no
+--     pueda salir un pixel blanco. Eso ultimo no es "salen pocos": el escalon
+--     del blanco se manda por encima de uno, que es mas de lo que la cuenta de
+--     espuma puede dar en ningun pixel.
+--   * que el agua DESFILE a sotavento y corra por debajo del barco cuando anda.
 --
 -- La estela se mide igual: los brazos de la V solo dicen la verdad si se abren
 -- con lo que el barco ANDA, y eso son dos capturas y una resta.
@@ -30,6 +36,7 @@ package.path = "./?.lua;" .. package.path
 -- love de mentira: apuntar lo que se pinta y tragarse todo lo demas.
 local painted = {}   -- { id, x, y } de cada sprite dibujado
 local byImage = {}   -- imagen -> id, para poder leer painted
+local sent = {}      -- nombre -> valor de cada uniforme del shader
 
 local function nop() end
 
@@ -54,6 +61,17 @@ love.graphics = setmetatable({
                  getWidth = function() return data.w end,
                  getHeight = function() return data.h end }
     end,
+    -- Shader y lienzo de mentira. El shader apunta lo que se le manda: es
+    -- todo lo que hace falta para medir el mar sin pintarlo.
+    newShader = function() return { send = function(_, name, value)
+        sent[name] = value
+    end } end,
+    newCanvas = function(w, h)
+        return { setFilter = nop, release = nop,
+                 getWidth = function() return w end,
+                 getHeight = function() return h end }
+    end,
+    getCanvas = function() return nil end,
     draw = function(img, x, y, angle)
         -- REGLA 1. Si esto salta, alguien ha rotado un sprite.
         assert(angle == nil or angle == 0,
@@ -67,6 +85,7 @@ local Constants = require('src.constants')
 local Util      = require('src.util')
 local Art       = require('src.art')
 local Sea       = require('src.sea')
+local Surface   = require('src.surface')
 local World     = require('src.world')
 local Ship      = require('src.ship')
 
@@ -111,33 +130,50 @@ local function sail(windFrom, strength, heading, seconds)
     return s
 end
 
--- Que se ha pintado de una escena, contado por familia.
+-- Que se ha pintado de una escena, contado por familia, y que se le ha mandado
+-- al shader. El lienzo del mar y el cuadro sobre el que corre el shader no
+-- llevan id: no son sprites del juego.
 local function shot(s)
-    painted = {}
+    painted, sent = {}, {}
     Sea.draw(s)
     local tally = setmetatable({}, { __index = function() return 0 end })
     for _, p in ipairs(painted) do
-        local family = p.id:gsub("%d+$", "")
-        tally[family] = tally[family] + 1
-        tally[p.id] = tally[p.id] + 1
+        if p.id then
+            local family = p.id:gsub("%d+$", "")
+            tally[family] = tally[family] + 1
+            tally[p.id] = tally[p.id] + 1
+        end
     end
     return tally
 end
 
--- El angulo de una familia orientada, leido del sprite que se ha usado.
--- Devuelve nil si no se pinto ninguno.
-local function angleOf(tally, family)
-    local best, bestN = nil, 0
-    for d = 1, Art.SEA_DIRS do
-        local n = tally[family .. d]
-        if n > bestN then best, bestN = d, n end
-    end
-    return best and (best - 1) * math.pi / Art.SEA_DIRS
+-- Direccion HACIA la que sopla, en el mundo.
+local function windTo(s)
+    return Util.headingToVector(Util.wrapAngle(s.wind.from + math.pi))
 end
 
--- Diferencia entre dos angulos de TRAZO: viven en media vuelta, asi que 175
--- grados y 5 grados distan diez, no ciento setenta.
-local function strokeDiff(a, b)
+-- Los dos ejes del campo de espuma, leidos de los uniformes y puestos en
+-- PANTALLA. El eje largo (`u`) corre a lo largo del viento y el corto (`v`) lo
+-- cruza; lo que se mide de ellos es hacia donde apuntan y cuanto miden, que es
+-- lo mismo que decir hacia donde se peina el mar y cuanto se estira.
+local function axis(which)
+    local i = (which == "u") and 1 or 2
+    return sent.uBasisX[i], sent.uBasisY[i]
+end
+
+local function angleOf(which)
+    local ax, ay = axis(which)
+    return math.atan2(ay, ax)
+end
+
+local function lengthOf(which)
+    local ax, ay = axis(which)
+    return math.sqrt(ax * ax + ay * ay)
+end
+
+-- Diferencia entre dos angulos de EJE: un eje no tiene punta, asi que vive en
+-- media vuelta -- 175 grados y 5 grados distan diez, no ciento setenta.
+local function axisDiff(a, b)
     local d = math.abs(a - b) % math.pi
     return math.min(d, math.pi - d)
 end
@@ -149,60 +185,125 @@ do
     local s = sail(0, 1.0, math.pi / 2)
     local ok = pcall(shot, s)
     check("una pantalla entera de mar sin una sola rotacion", ok)
-    check("y se pinto algo, no es que no dibujara nada", #painted > 50,
-          #painted .. " sprites")
+    check("y se pinto algo, no es que no dibujara nada", #painted > 10,
+          #painted .. " llamadas de dibujo")
+    check("y el mar llego al shader", sent.uBasisX ~= nil and sent.uCut ~= nil)
 end
 
 --== De donde sopla ========================================================
 
 print("\nel mar se peina con el viento")
 do
+    local s = sail(0, 1.0, math.pi / 2)
+    shot(s)
+    local wx, wy = windTo(s)
+    local wind = Sea.screenAngle(s, wx, wy)
+    check("el campo corre justo por donde sopla el viento",
+          axisDiff(angleOf("u"), wind) < 0.02,
+          string.format("%.0f vs %.0f grados",
+                        math.deg(angleOf("u")), math.deg(wind)))
+    check("y la veta de espuma lo cruza en angulo recto",
+          math.abs(axisDiff(angleOf("u"), angleOf("v")) - math.pi / 2) < 0.02,
+          string.format("%.0f grados entre ejes",
+                        math.deg(axisDiff(angleOf("u"), angleOf("v")))))
+    check("y es la veta la que se estira, no el desfile",
+          lengthOf("v") < lengthOf("u"),
+          string.format("%.3f a traves contra %.3f a lo largo",
+                        lengthOf("v"), lengthOf("u")))
+
     -- Mismo viento, dos rumbos: el mar tiene que verse girado en pantalla
     -- exactamente lo que se ha virado.
-    local a = shot(sail(0, 1.0, math.pi / 2))
-    local b = shot(sail(0, 1.0, math.pi / 2 + math.pi / 4))
-    local wa, wb = angleOf(a, "sea.wave"), angleOf(b, "sea.wave")
-    check("virar repeina el mar", wa and wb and strokeDiff(wa, wb) > 0.5,
-          wa and wb and string.format("%.0f vs %.0f grados",
-                                      math.deg(wa), math.deg(wb)) or "sin olas")
+    local a = angleOf("u")
+    shot(sail(0, 1.0, math.pi / 2 + math.pi / 4))
+    local b = angleOf("u")
+    check("virar repeina el mar",
+          math.abs(axisDiff(a, b) - math.pi / 4) < 0.05,
+          string.format("%.0f grados de repeinado por 45 de virada",
+                        math.deg(axisDiff(a, b))))
 
     -- Rumbo fijo, dos vientos: igual, porque lo que manda es el angulo entre
     -- los dos y no el rumbo suelto.
-    local c = shot(sail(math.pi / 4, 1.0, math.pi / 2))
-    local wc = angleOf(c, "sea.wave")
-    check("y rolar el viento tambien", wa and wc and strokeDiff(wa, wc) > 0.3,
-          wa and wc and string.format("%.0f vs %.0f grados",
-                                      math.deg(wa), math.deg(wc)) or "sin olas")
-
-    -- La racha corre a favor del viento y la cresta se peina contra el: entre
-    -- las dos familias hay siempre un angulo recto, en cualquier rumbo.
-    local ga = angleOf(a, "sea.gust")
-    check("la racha cruza a la cresta en angulo recto",
-          wa and ga and math.abs(strokeDiff(wa, ga) - math.pi / 2) < 0.30,
-          wa and ga and string.format("%.0f grados entre ellas",
-                                      math.deg(strokeDiff(wa, ga))) or "sin rachas")
+    shot(sail(math.pi / 4, 1.0, math.pi / 2))
+    check("y rolar el viento tambien", axisDiff(a, angleOf("u")) > 0.3,
+          string.format("%.0f grados", math.deg(axisDiff(a, angleOf("u")))))
 end
 
 --== Calma =================================================================
 
 print("\ncon poco viento el mar se calma")
 do
-    local fresco = shot(sail(0, 1.00, math.pi / 2))
-    local flojo  = shot(sail(0, 0.55, math.pi / 2))
+    shot(sail(0, 1.00, math.pi / 2))
+    local fresco = { gain = sent.uGain, white = sent.uCut[3],
+                     warp = sent.uWarp, veta = lengthOf("u") / lengthOf("v") }
+    shot(sail(0, 0.55, math.pi / 2))
+    local flojo  = { gain = sent.uGain, white = sent.uCut[3],
+                     warp = sent.uWarp, veta = lengthOf("u") / lengthOf("v") }
 
-    check("con viento flojo hay menos trazos",
-          flojo["sea.ripple"] + flojo["sea.wave"] + flojo["sea.swell"]
-        < fresco["sea.ripple"] + fresco["sea.wave"] + fresco["sea.swell"])
+    check("con viento flojo hay menos espuma", flojo.gain < fresco.gain * 0.5,
+          string.format("%.2f contra %.2f", flojo.gain, fresco.gain))
 
-    check("y en calma no rompe ni una ola",
-          flojo["sea.swell"] == 0 and fresco["sea.swell"] > 0,
-          flojo["sea.swell"] .. " rompientes en calma, "
-          .. fresco["sea.swell"] .. " con viento")
+    -- No es que salgan pocas rompientes: es que ninguna cuenta de espuma puede
+    -- pasar de uno, asi que con el escalon por encima de uno no hay blanco.
+    check("y en calma no PUEDE romper ni una ola",
+          flojo.white > 1.0 and fresco.white < 1.0,
+          string.format("escalon %.2f en calma, %.2f con viento",
+                        flojo.white, fresco.white))
 
-    check("y no queda una racha en la pantalla",
-          flojo["sea.gust"] == 0 and fresco["sea.gust"] > 0,
-          flojo["sea.gust"] .. " rachas en calma, "
-          .. fresco["sea.gust"] .. " con viento")
+    check("y el mar de calma es de rizos, no de vetas largas",
+          flojo.veta < fresco.veta * 0.6,
+          string.format("%.1f de estiron en calma, %.1f con viento",
+                        flojo.veta, fresco.veta))
+
+    check("y las crestas apenas se comban", flojo.warp < fresco.warp * 0.6,
+          string.format("%.3f contra %.3f", flojo.warp, fresco.warp))
+end
+
+--== El desfile ============================================================
+
+print("\nel agua desfila aunque el barco no ande")
+do
+    -- El origen del campo se envuelve, asi que la resta se hace por el camino
+    -- corto.
+    local function gap(a, b)
+        return (a - b + Surface.WRAP / 2) % Surface.WRAP - Surface.WRAP / 2
+    end
+
+    local s = sail(0, 1.0, math.pi / 2)
+    s.docked = "x"                       -- amarrado: el barco no anda
+    shot(s)
+    local antes = sent.uOrigin[1]
+    for _ = 1, 30 do Sea.update(s, 1 / 30) end
+    shot(s)
+    check("amarrado, el agua sigue corriendo a sotavento",
+          gap(sent.uOrigin[1], antes) < -2,
+          string.format("%.1f celdas en un segundo", gap(sent.uOrigin[1], antes)))
+
+    -- Y andando, el campo tiene que correr ademas por debajo del barco: si no,
+    -- el mar seria una tela pintada delante de la que el barco resbala.
+    local quieto = sail(0, 0.55, math.pi / 2, 2)
+    quieto.docked = "x"
+    shot(quieto)
+    local a0 = sent.uOrigin[2]
+    for _ = 1, 60 do Sea.update(quieto, 1 / 30) end
+    shot(quieto)
+    local sinAndar = math.abs(gap(sent.uOrigin[2], a0))
+
+    local anda = sail(0, 0.55, math.pi / 2 + 0.7, 2)
+    shot(anda)
+    local b0 = sent.uOrigin[2]
+    for _ = 1, 120 do
+        local fx, fy = Util.headingToVector(anda.heading)
+        local d = Ship.speed(anda) * (1 / 30)
+        anda.x, anda.y = anda.x + fx * d, anda.y + fy * d
+        Sea.update(anda, 1 / 30)
+    end
+    shot(anda)
+    -- Parado, el eje cruzado no se mueve NADA: por ahi no desfila el agua.
+    -- Andando de traves si, y eso es lo que ata el campo al mundo.
+    check("y andando de traves el campo corre ademas de lado",
+          sinAndar == 0 and math.abs(gap(sent.uOrigin[2], b0)) > 0.5,
+          string.format("%.2f celdas de lado contra %.2f parado",
+                        math.abs(gap(sent.uOrigin[2], b0)), sinAndar))
 end
 
 --== Estela ================================================================
