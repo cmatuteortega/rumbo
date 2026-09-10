@@ -44,30 +44,30 @@ Sea.GUST_CELL    = 46
 Sea.CALM_CELL    = 110  -- manchas de agua honda
 Sea.SCENERY_CELL = 250  -- islas y escollos
 
--- A que velocidad desfila el mar, en pixeles de mundo por segundo: {calma,
--- lo que suma el viento duro}. Salen fuera porque son la escala del juego y
--- no un numero de dibujo, y la escala la pone el BARCO: Ship.BASE_SPEED son
--- siete pixeles por segundo, y una buena singladura anda cuatro y medio.
+-- Lo que se mueve el agua POR SI SOLA, en pixeles de mundo por segundo:
+-- {calma, lo que suma el viento duro}. Es la animacion del mar, y hay que
+-- separarla de lo otro que se ve moverse en pantalla, que es el barco cruzando
+-- el campo: eso ultimo son otros diez pixeles por segundo y no sale de aqui.
 --
--- El mar viejo desfilaba a treinta y uno, y las rachas a noventa y seis. Con
--- el barco quieto en el centro de la pantalla eso no se lee como viento: se
--- lee como que el barco va marcha atras a toda maquina. Un campo de agua no
--- puede correr mas que el barco que lo cruza, o el barco parece anclado.
+-- El mar viejo desfilaba a treinta y uno y las rachas a noventa y seis --
+-- cuatro y catorce veces lo que anda el barco. Ahora la ola hace siete
+-- decimas y la racha dos y pico: el agua esta practicamente quieta y lo que
+-- desfila es el barco pasando por ella, que es como se ve el mar desde una
+-- cubierta. Un campo de agua corriendo por su cuenta no se lee como viento --
+-- se lee como que el barco cia a toda maquina.
 --
--- Las rachas si pueden ir mas deprisa que la ola -- son el viento tocando la
--- superficie, no la superficie moviendose --, pero el doble del barco es el
--- techo: tests/test_sea.lua las ata a las dos contra Ship.BASE_SPEED.
+-- La factura de tenerlo tan bajo hay que saberla: el desfile ya no dice HACIA
+-- DONDE sopla, porque a siete decimas contra los diez del barco no se aprecia.
+-- De donde sopla lo siguen diciendo las orientaciones -- la cresta peinada
+-- contra el viento y la racha a favor, a noventa grados una de otra --, que es
+-- la lectura buena y la que vigila la prueba. Si algun dia hace falta
+-- recuperar la otra, se sube esto, no se toca el barco.
 --
--- La ola va a la MITAD de lo que anda el barco, no a lo mismo, y la razon es
--- que el agua NO desfila sola: en pantalla se le suma lo que el barco la
--- cruza, y ese sumando es el grande. Igualar los dos numeros hacia dos cosas
--- malas a la vez -- ciñendo se sumaban y el mar se iba a trece pixeles por
--- segundo, y en popa se RESTABAN hasta cero y el mar se quedaba clavado, que
--- es lo que se lee como pantalla colgada. A la mitad, ceñir baja a diez y en
--- popa quedan tres y pico: el desfile pasa a decir el rumbo en vez de
--- desbocarse por un lado y morirse por el otro.
-Sea.WAVE_DRIFT = { 0.75, 2.75 }
-Sea.GUST_DRIFT = { 4.0, 10.0 }
+-- La racha va mas deprisa que la ola porque es el viento TOCANDO la
+-- superficie, no la superficie moviendose. El techo de las dos sigue siendo
+-- Ship.BASE_SPEED, y ahi las ata tests/test_sea.lua.
+Sea.WAVE_DRIFT = { 0.15, 0.55 }
+Sea.GUST_DRIFT = { 0.8, 2.0 }
 
 --==========================================================================
 -- Camara
@@ -455,12 +455,13 @@ local function drawWaves(state)
         -- un poco despues. Con una fase suelta por ola el mar hierve; con
         -- esta, respira.
         --
-        -- Respira despacio: a dos radianes por segundo la mar entera subia y
-        -- bajaba tres veces cada diez segundos, que sumado al desfile daba el
-        -- agua nerviosa que se veia antes. La mitad son seis segundos de
-        -- vaiven, que es lo que tarda una mar de verdad.
+        -- Respira MUY despacio, medio minuto por vaiven. Empezo en dos
+        -- radianes por segundo -- tres subidas y bajadas cada diez segundos --
+        -- y era la otra mitad del agua nerviosa: el desfile ponia la carrera y
+        -- esto ponia el hervor. Baja con el desfile y por lo mismo, que una mar
+        -- de fondo tarda en pasar y no tiembla.
         local along = wx * tx + wy * ty
-        local surge = math.sin(along * 0.075 - t * (0.45 + 0.55 * sea)) * (0.5 + 2.2 * sea)
+        local surge = math.sin(along * 0.075 - t * (0.09 + 0.11 * sea)) * (0.5 + 2.2 * sea)
 
         local x, y = Sea.project(state,
                                  wx + ox + tx * surge,

@@ -230,10 +230,15 @@ do
           racha > ola and racha <= 2 * Ship.BASE_SPEED,
           string.format("%.1f px/s", racha))
 
-    -- En calma tambien tiene que haber desfile: un mar clavado se lee como una
-    -- pantalla colgada, que es la leccion del corcho del redal.
-    check("y en calma el agua sigue moviendose",
-          Sea.WAVE_DRIFT[1] > 0 and Sea.GUST_DRIFT[1] > 0)
+    -- Y el suelo, que ahora importa mas que el techo: el agua esta a siete
+    -- decimas de pixel por segundo, cerca de pararse del todo. Por debajo de
+    -- media (un pixel cada dos segundos) deja de haber animacion a este grano
+    -- y el mar se congela, que es la leccion del corcho del redal -- una
+    -- pantalla identica cuadro tras cuadro se lee como colgada. Que el barco la
+    -- cruce no salva: amarrado en puerto el barco no cruza nada.
+    check("pero el agua no se congela", ola >= 0.5 and racha >= 0.5,
+          string.format("%.2f la ola, %.2f la racha", ola, racha))
+    check("y en calma tampoco", Sea.WAVE_DRIFT[1] > 0 and Sea.GUST_DRIFT[1] > 0)
 end
 
 --== Estela ================================================================

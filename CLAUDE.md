@@ -33,10 +33,12 @@ reposo) no se ven mirando la pantalla un rato, solo midiendo.
 cosas que tampoco se ven a ojo: que **ni una** llamada pase rotacion (el love
 de mentira peta si alguien lo intenta), que las crestas y las rachas salgan
 siempre a noventa grados y giren con el rumbo, que con viento flojo haya de
-verdad menos trazos y ninguno blanco, y que el mar no desfile mas deprisa que lo
-que anda el barco (`Sea.WAVE_DRIFT` y `Sea.GUST_DRIFT` contra
-`Ship.BASE_SPEED`) — a ojo un mar corriendo se lee como viento, y solo con el
-numero delante se ve que lo que dice es que el barco va marcha atras. Ademas
+verdad menos trazos y ninguno blanco, y que el agua se mueva por si sola dentro de la
+horquilla (`Sea.WAVE_DRIFT` y `Sea.GUST_DRIFT`): ni mas deprisa que lo que anda
+el barco — a ojo un mar corriendo se lee como viento, y solo con el numero
+delante se ve que lo que dice es que el barco va marcha atras — ni tan despacio
+que se congele, que amarrado el barco no cruza el campo y el mar se queda
+quieto. Ademas
 mide que la estela se abra con lo que el barco anda y no con el reloj, y que se
 quede corta cuando no se corre.
 `test_deck.lua` tambien: `src/art.lua` no llama a `love` hasta que se le pide un
@@ -158,9 +160,11 @@ familias van siempre a noventa grados y giran con el rumbo; la fuerza del viento
 —estirada a [0,1] en `Sea.state`, porque el rango del viento es corto— decide
 cuantos trazos hay, como de grandes y si alguno rompe en blanco, y un ruido de
 manchas (`SWELL_CELL`) hace que un trozo de mar este picado y el de al lado
-liso, y el desfile va atado a `Ship.BASE_SPEED` (`Sea.WAVE_DRIFT`,
-`Sea.GUST_DRIFT`) porque un mar que corre mas que el barco no se lee como viento
-sino como que el barco cia. Con viento flojo quedan cuatro rizos y ni una racha.
+liso, y el agua se mueve MUY poco por si sola
+(`Sea.WAVE_DRIFT`, `Sea.GUST_DRIFT`: siete decimas de pixel por segundo la ola)
+porque en pantalla se le suma lo que el barco cruza el campo, que son diez, y es
+el sumando grande — un mar que corre por su cuenta no se lee como viento sino
+como que el barco cia. Con viento flojo quedan cuatro rizos y ni una racha.
 Los campos que
 desfilan (olas, rachas, y las manchas de agua honda) no se reciclan con un
 modulo —eso da un tiron cada vuelta— sino desplazando el punto alrededor del

@@ -648,31 +648,38 @@ de seno) en vez de ser una raya de un pixel; el blanco es solo de las
 rompientes, y va suelto, nunca encadenado. Las olas corrientes si se encadenan,
 con hueco y escalonadas, porque una cresta es larga y se rompe a trozos.
 
-### El mar no puede correr mas que el barco
+### El agua casi no se mueve: lo que desfila es el barco
 
-Un campo de agua que cruza la pantalla mas deprisa que el barco no se lee como
-viento: se lee como que el barco **cia a toda maquina**. Con el barco quieto en
-el centro, la unica velocidad que hay en pantalla es la del mar, y el ojo la
-compara con lo unico que tiene a mano — el casco parado.
+En pantalla hay dos velocidades sumadas y se confunden en una, que es lo que
+hizo falta tres intentos para arreglar:
 
-Asi que la escala del desfile la pone `Ship.BASE_SPEED`, siete pixeles por
-segundo: la ola desfila hasta tres y medio —la **mitad** de lo que anda el
-barco— y la racha hasta catorce (`Sea.WAVE_DRIFT`, `Sea.GUST_DRIFT`, atados por
-la prueba). La racha puede correr mas que la ola porque es el viento **tocando**
-la superficie y no la superficie moviendose; el doble del barco es el techo, y
-mas ya es otra vez marcha atras. El vaiven del tren de olas va por el mismo
-camino: seis segundos de respiracion, que es lo que tarda una mar de verdad.
+* lo que el **agua se mueve sola**, a sotavento (`Sea.WAVE_DRIFT`,
+  `Sea.GUST_DRIFT`);
+* lo que el **barco cruza** el campo, que son sus diez pixeles por segundo.
 
-La ola va a la mitad y no a la par por una razon que solo se ve jugando: **el
-agua no desfila sola**, se le suma lo que el barco la cruza. Con la ola igualada
-al casco, ceñir sumaba las dos velocidades y el mar volvia a irse al doble. A la
-mitad la suma cae donde tiene que estar, y de propina el desfile pasa a decir el
-rumbo: en popa el agua casi se para, ciñendo corre.
+El segundo es el grande, y por eso la primera version se veia nerviosa aunque
+tuviera bien todo lo demas: el agua corria a treinta y uno y las rachas a
+noventa y seis, cuatro y catorce veces lo que anda el barco, y encima se les
+sumaba el barco. Un campo de agua que corre por su cuenta no se lee como viento
+— se lee como que el casco **cia a toda maquina**.
 
-La primera version desfilaba a treinta y uno y las rachas a noventa y seis —
-cuatro y catorce veces lo que anda el barco. Tenia todo lo demas bien y aun asi
-el mar se veia nervioso, porque el error no estaba en ningun trazo sino en el
-reloj.
+Ahora la ola hace **siete decimas** de pixel por segundo y la racha dos y pico:
+el agua esta practicamente quieta y lo que desfila es el barco pasando por ella,
+que es exactamente como se ve el mar desde una cubierta. El vaiven del tren de
+olas va por el mismo camino — medio minuto por respiracion, que es lo que tarda
+una mar de fondo en pasar.
+
+Dos facturas que conviene saberse:
+
+* el desfile **ya no dice hacia donde** sopla; a siete decimas contra los diez
+  del barco no se aprecia. De donde sopla lo siguen diciendo las orientaciones,
+  que es la lectura buena: la cresta peinada contra el viento y la racha a
+  favor, a noventa grados una de otra.
+* **amarrado el barco no cruza nada**, asi que en puerto el agua se queda casi
+  parada. El suelo esta en media decima de pixel por segundo y la prueba lo
+  vigila: por debajo de eso no hay animacion a este grano y una pantalla
+  identica cuadro tras cuadro se lee como colgada — la leccion del corcho del
+  redal.
 
 ### La estela es el bigote de proa, estirado
 
