@@ -694,11 +694,26 @@ Por detras del espejo la calle mide la **manga entera del sprite**, leida de
 `Art.HULL_BOX`: si alguien redibuja el barco mas ancho, el surco se ensancha con
 el, y hay una prueba que lo comprueba.
 
-Dos decisiones que costaron verse. La primera: los brazos van multiplicados por
-la veta del propio oleaje, para que salgan rotos a trozos; una linea limpia a
-este grano de pixel se lee como pintada encima. La segunda: la espuma de la
-estela **si** puede romper en blanco con el mar en calma, aunque el agua libre
-no pueda -- una estela es blanca haga el tiempo que haga.
+Tres decisiones, y dos de ellas son cicatrices de haberlo jugado.
+
+La primera se vio antes: los brazos van multiplicados por la veta del propio
+oleaje, para que salgan rotos a trozos; una linea limpia a este grano de pixel
+se lee como pintada encima.
+
+La segunda: la espuma de la estela **si** puede romper en blanco con el mar en
+calma, aunque el agua libre no pueda. Tiene su propio escalon de blanco, aparte
+del techo que el viento le pone al oleaje. Sumada al del mar, con viento flojo
+la estela salia de color de bajio y no se veia -- una estela es blanca haga el
+tiempo que haga.
+
+La tercera: la estela se apaga por lo **andado** (110 px) y no por el reloj, y
+lo que se mide por velocidad son **dos** numeros y no uno. Por delante del
+espejo manda la regla de siempre (por debajo de un tercio de andar la roda no
+rompe agua); por detras, una compuerta que se llena mucho antes, porque un
+barco deja rastro a cualquier velocidad a la que se mueva de verdad. Con las
+dos cosas atadas a la velocidad y medidas en segundos, la estela se borraba
+justo virando o con viento flojo -- que es cuando el barco pierde andar y
+cuando mas se agradece ver que sigue vivo.
 
 Delante ya no hay bigote de tres tamanos: la punta de la V es el bigote, y sale
 de la misma cuenta. Lo que si sigue siendo sprite son las **salpicaduras**, que

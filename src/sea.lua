@@ -123,15 +123,22 @@ local function speedFraction(state)
     return Util.clamp(Ship.speed(state) / REF_SPEED, 0, 1)
 end
 
--- Lo mismo, pero contado desde WORKING: es lo que se le manda al shader para
--- que module la ESPUMA de la estela, y por eso vale cero en el ojo del viento.
--- El surco no cuelga de esto del todo (el shader le deja un suelo): un barco
--- que apenas anda no levanta espuma, pero el casco sigue metido en el agua y
--- sin ese rastro se ve quieto en un mar que desfila.
-local function workFraction(state)
+-- La roda rompe agua: contado desde WORKING, asi que en el ojo del viento vale
+-- cero y no hay bigote. Manda por DELANTE del espejo de popa.
+local function bowFraction(state)
     local f = speedFraction(state)
     if f <= WORKING then return 0 end
     return (f - WORKING) / (1 - WORKING)
+end
+
+-- La estela de popa: se llena mucho antes, porque un barco deja rastro a
+-- cualquier velocidad a la que se mueva de verdad. Ponerle la regla de la roda
+-- fue un error que costo verse: la estela desaparecia justo cuando mas falta
+-- hace -- virando, o con viento flojo --, que es cuando el barco va despacio y
+-- cuando mas se agradece ver que sigue andando. A 1,6 px/s ya esta al maximo.
+local WASH = 0.35
+local function washFraction(state)
+    return Util.clamp(speedFraction(state) / WASH, 0, 1)
 end
 
 --==========================================================================
@@ -158,9 +165,25 @@ end
 -- cambie a mitad de estela.
 
 local wake, spray = {}, {}
-local WAKE_MAX  = 80
+local WAKE_MAX  = 48
 local SPRAY_MAX = 48
 local SEED_STEP = 4      -- un punto de estela cada tantos pixeles de mundo
+
+-- Cuanto dura la estela, en PIXELES ANDADOS. Es la misma leccion que la de la
+-- V, aplicada a lo que faltaba: medida en segundos, un barco lento dejaba un
+-- rabito de treinta pixeles que se apagaba antes de llegar al borde de la
+-- pantalla, asi que con viento flojo o en mitad de una virada -- justo cuando
+-- el barco pierde andar -- la estela no se veia. Medida en lo andado, la
+-- estela mide siempre lo mismo por muy despacio que se vaya: lo que cambia es
+-- lo que tarda en dejarla atras, que es lo que de verdad pasa en el agua.
+local WAKE_RUN  = 110
+-- Y un tope en segundos, que es el respaldo del barco PARADO: sin el, un barco
+-- quieto conservaria su estela para siempre. Va holgado a proposito, porque en
+-- cuanto el barco anda es lo andado quien manda; apretarlo volvia a acortar la
+-- estela de los barcos lentos, que es el fallo que se queria quitar. Aun asi,
+-- por debajo de unos cuatro pixeles por segundo la estela sale mas corta: un
+-- barco que se arrastra deja menos rastro, y eso es verdad tambien en el agua.
+local WAKE_LIFE = 30
 -- La estela nace DETRAS del espejo de popa y la salpicadura DELANTE de la
 -- roda, y los dos numeros son media eslora larga por una razon que costo
 -- verse: sembrados mas cerca del centro quedan debajo del casco, que mide 82
@@ -179,7 +202,7 @@ function Sea.reset()
     sprayAcc, sprayN = 0, 0
 end
 
-local function shedWake(state, frac)
+local function shedWake(state)
     local fx, fy = Util.headingToVector(state.heading)
     local sx = state.x - fx * STERN
     local sy = state.y - fy * STERN
@@ -192,11 +215,6 @@ local function shedWake(state, frac)
         -- lo que se tarda.
         d = state.distance,
         age = 0,
-        -- Un barco lento deja un remolino corto; uno lanzado, uno largo. El
-        -- numero se midio en pantalla y no en el reloj: la estela tiene que
-        -- durar lo bastante para verse VARIAS ESLORAS por popa, o a media
-        -- singladura no asoma del espejo y el barco parece estar parado.
-        life = 3.5 + 6.5 * frac,
     })
     while #wake > WAKE_MAX do table.remove(wake) end
 end
@@ -259,8 +277,8 @@ function Sea.update(state, dt)
     -- pero si deja un rastro detras, y sin el se ve quieto en un mar que
     -- desfila.
     local frac = speedFraction(state)
-    if frac > 0.12 then
-        shedWake(state, frac)
+    if frac > 0.05 then
+        shedWake(state)
         shedSpray(state, dt, frac, Sea.state(state))
     end
 
@@ -268,7 +286,9 @@ function Sea.update(state, dt)
     for i = #wake, 1, -1 do
         local p = wake[i]
         p.age = p.age + dt
-        if p.age > p.life then table.remove(wake, i) end
+        if p.age > WAKE_LIFE or state.distance - p.d > WAKE_RUN then
+            table.remove(wake, i)
+        end
     end
     for i = #spray, 1, -1 do
         local q = spray[i]
@@ -346,16 +366,21 @@ local function wakeTrack(state)
     for i = 1, #wake, stride do
         local p = wake[i]
         local x, y = Sea.project(state, p.x, p.y)
+        local run = state.distance - p.d
         track[#track + 1] = {
             x = x, y = y,
-            run  = state.distance - p.d,
-            left = Util.clamp(1 - p.age / p.life, 0, 1),
+            run  = run,
+            -- Se apaga por lo andado, y el reloj es solo el tope del barco
+            -- parado. La raiz deja la estela con cuerpo casi hasta el final en
+            -- vez de irse apagando desde el primer pixel.
+            left = math.sqrt(Util.clamp(math.min(1 - run / WAKE_RUN,
+                                                 1 - p.age / WAKE_LIFE), 0, 1)),
         }
         if #track >= Surface.TRACK then break end
     end
 
     return { track = track, beam = beam, hull = len,
-             work = workFraction(state) }
+             bow = bowFraction(state), wash = washFraction(state) }
 end
 
 local function drawSpray(state)

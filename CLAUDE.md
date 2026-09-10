@@ -182,8 +182,16 @@ multiplicados por la veta del propio oleaje para que salgan rotos: una linea
 limpia a este grano se lee como pintada encima. Ya no hay bigote de proa —la
 punta de la V lo es— y lo unico que sigue siendo sprite son las salpicaduras, a
 sotavento, porque una gota esta en el AIRE y no en el agua. La espuma de la
-estela calla por debajo de `WORKING` (`workFraction`), que es donde un barco
-deja de levantar agua; el surco no del todo, porque el casco sigue metido.
+estela tiene DOS compuertas y no una: por delante del espejo manda
+`bowFraction` (la regla de siempre: por debajo de `WORKING` la roda no rompe
+agua) y por detras `washFraction`, que se llena a 1,6 px/s. Atarlas al mismo
+numero fue un fallo que solo se vio jugando: la estela desaparecia justo
+virando o con viento flojo, que es cuando el barco pierde andar. Por lo mismo
+la estela se apaga por lo ANDADO (`WAKE_RUN`, 110 px) y no por el reloj —
+medida en segundos, un barco lento dejaba un rabito que se apagaba antes de
+llegar al borde de la pantalla—, y el blanco de la espuma del barco lleva su
+propio escalon (`uBreak`), aparte del techo que el viento le pone al mar: una
+estela es blanca haga el tiempo que haga.
 
 Los mandos que se usan navegando salen tocando SU puesto en cubierta, no de la
 columna de botones, y por eso el timon y el velamen dejan su hoja para el

@@ -102,6 +102,14 @@ Surface.ARM    = 26
 --==========================================================================
 
 local SOURCE = [[
+// En movil la precision por defecto puede ser mediump, y con mediump los
+// hashes se quedan sin decimales: las celdas salen a bandas y el mar pierde
+// la mitad de los rizos. Se pide highp donde lo haya. En escritorio no existen
+// los calificadores de precision, de ahi la guarda.
+#if defined(GL_ES) && defined(GL_FRAGMENT_PRECISION_HIGH)
+precision highp float;
+#endif
+
 #define TAU 6.2831853
 #define WRAP 512.0
 #define OCT 3.0
@@ -135,7 +143,15 @@ extern float uBeam;     // media manga del casco, en pixeles de arte
 extern float uHull;     // eslora: de espejo a roda
 extern float uSpread;   // tangente del semiangulo de la V
 extern float uArm;      // cuanto se abren los brazos por fuera de la manga
-extern float uWork;     // lo que anda el barco; parado no levanta agua
+// Dos compuertas y no una. Por DELANTE del espejo manda uBow, que es la regla
+// de siempre: por debajo de un tercio de andar la roda no rompe agua y no hay
+// bigote. Por DETRAS manda uWash, que se llena mucho antes: un barco deja
+// rastro a cualquier velocidad a la que se mueva de verdad, y con la regla de
+// la roda puesta tambien aqui la estela desaparecia justo cuando mas falta
+// hace -- virando, o con viento flojo, que es cuando el barco va despacio.
+extern float uBow;
+extern float uWash;
+extern float uBreak;    // escalon del blanco de la ESTELA, aparte del del mar
 
 // Los hashes del shader original, con la celda mordida en modulo: es lo que
 // hace el campo periodico y lo que mantiene los numeros pequenos.
@@ -155,8 +171,13 @@ vec2 hash22(vec2 p, float per) {
 
 // Distancia entre la celda mas cercana y la segunda. Vale casi cero justo en
 // la frontera entre dos celdas -- que es donde va la espuma -- y crece hacia
-// dentro. Una de cada tres semillas se cae (el pow contra 0.5), y eso es lo
-// que rompe la reticula en trozos sueltos en vez de una malla cerrada.
+// dentro. Una de cada tres semillas se cae, y eso es lo que rompe la reticula
+// en trozos sueltos en vez de una malla cerrada.
+//
+// El corte era `pow(hash, .6) < 0.5` en el shader original. Es exactamente lo
+// mismo que comparar el hash contra 0.5^(1/0.6), y asi se ahorran veintisiete
+// pow por pixel y capa -- y sobre todo se evita pow(0, y), que hay
+// controladores que devuelven NaN y con NaN aqui se va la pantalla entera.
 float cells(vec2 st, float phase, float per) {
     vec2 i = floor(st), f = fract(st);
     float m1 = 9.0, m2 = 9.0;
@@ -164,7 +185,7 @@ float cells(vec2 st, float phase, float per) {
         for (int x = -1; x <= 1; x++) {
             vec2 n = vec2(float(x), float(y));
             vec2 c = i + n;
-            if (pow(hash12(c, per), .6) < 0.5) continue;
+            if (hash12(c, per) < 0.31498) continue;
             vec2 p = 0.5 + .3 * sin(TAU * hash22(c, per) + phase);
             float d = length(n + p - f);
             if (d < m1) { m2 = m1; m1 = d; }
@@ -251,19 +272,35 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     float manga = beamAt(wk.y);
     float lane = (1.0 - smoothstep(manga - 2.0, manga + 3.0, wk.x)) * wk.z;
 
+    // La compuerta cambia en el espejo de popa, y cambia SUAVE: un escalon
+    // justo ahi se ve como una raya de brillo cruzando la estela.
+    float gate = mix(uBow, uWash, smoothstep(-8.0, 8.0, wk.y));
+
     // EL SURCO. Dentro de la calle el oleaje se aplasta: no es que se pinte
     // espuma encima, es que el mar deja de haber. Se nota aunque el barco no
     // ande, porque el casco sigue metido en el agua.
-    lift *= 1.0 - 0.85 * lane * (0.40 + 0.60 * uWork);
+    lift *= 1.0 - 0.85 * lane * (0.40 + 0.60 * gate);
 
     float foam = vein * (0.5 + 0.5 * fine) * lift;
+
+    // Y la espuma que levanta el barco va aparte de la del oleaje. Aparte de
+    // verdad: tiene su propio escalon de blanco, porque el mar rompe solo si
+    // el viento da para ello y una estela es blanca haga el tiempo que haga.
+    // Sumandola a la del mar, con viento flojo la estela salia de color de
+    // bajio y no se veia.
 
     // EL HERVOR de popa: lo mas macizo de todo el mar, y dura poco -- media
     // eslora y se ha deshecho. Va elevado a una y media para que se concentre
     // en la crujia en vez de salir del ancho entero del espejo, y picado por la
     // octava fina: un rectangulo blanco detras del barco se lee como un babero.
-    foam += 0.95 * pow(lane, 1.5) * uWork
-                 * (1.0 - smoothstep(0.0, 18.0, wk.y)) * (0.45 + 0.55 * fine);
+    // El sqrt en vez de pow(x, 1.5): pow con la base en cero da NaN en algunos
+    // controladores, y aqui la base es cero en casi toda la pantalla.
+    // El hervor cuelga de uBow y no de uWash: que la estela no desaparezca por
+    // ir despacio no quiere decir que un barco al ralenti hierva por la popa
+    // como uno lanzado. Lo que no puede faltar es el RASTRO; la violencia si
+    // depende de lo que se corra.
+    float wash = 0.95 * lane * sqrt(lane) * uBow
+                      * (1.0 - smoothstep(0.0, 15.0, wk.y)) * (0.45 + 0.55 * fine);
 
     // LOS BRAZOS. Nacen en la roda -- ahi beamAt vale cero y la V cierra en
     // punta -- y se abren con lo que el barco ha ANDADO desde cada trozo de
@@ -271,19 +308,22 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     // Van multiplicados por la veta del propio mar para que salgan rotos a
     // trozos; una linea limpia a este grano se lee como pintada encima.
     float arm = manga + min(max(wk.y, 0.0) * uSpread, uArm);
-    foam += 1.00 * (1.0 - smoothstep(0.0, 3.5, abs(wk.x - arm)))
-                 * wk.z * uWork * (0.60 + 0.40 * vein);
+    wash += 1.00 * (1.0 - smoothstep(0.0, 3.5, abs(wk.x - arm)))
+                 * wk.z * gate * (0.60 + 0.40 * vein);
 
-    // Cinco escalones y ni un color entre medias. Con uCut.z por encima de uno
-    // -- que es lo que manda src/surface.lua en calma -- el AGUA no puede
-    // romper en blanco por mucho que se mire. La estela si: el hervor de popa
-    // pasa de uno a proposito, porque una estela es blanca haga el tiempo que
-    // haga.
+    // Cinco escalones y ni un color entre medias. Los dos primeros no
+    // distinguen de donde viene la espuma; el blanco si: el del mar tiene el
+    // techo que le pone el viento (con uCut.z por encima de uno -- que es lo
+    // que manda src/surface.lua en calma -- el agua no puede romper por mucho
+    // que se mire), y el de la estela tiene el suyo, que no depende del tiempo
+    // que haga.
+    float any = max(foam, wash);
     vec3 c = uWater;
     c = mix(c, uDeep,    step(uDark,  dark * lift));
-    c = mix(c, uShallow, step(uCut.x, foam));
-    c = mix(c, uFoam,    step(uCut.y, foam));
+    c = mix(c, uShallow, step(uCut.x, any));
+    c = mix(c, uFoam,    step(uCut.y, any));
     c = mix(c, uWhite,   step(uCut.z, foam));
+    c = mix(c, uWhite,   step(uBreak, wash));
     return vec4(c, 1.0);
 }
 ]]
@@ -388,7 +428,13 @@ function Surface.frame(state, sea, wake)
         hull    = (wake and wake.hull) or 1,
         spread  = Surface.SPREAD,
         arm     = Surface.ARM,
-        work    = (wake and wake.work) or 0,
+        bow     = (wake and wake.bow) or 0,
+        wash    = (wake and wake.wash) or 0,
+        -- El escalon del blanco de la ESTELA. Va aparte del del mar (uCut.z)
+        -- y no se mueve con el viento: una estela es blanca en calma igual que
+        -- con racha, y atarla al techo del oleaje la dejaba de color de bajio
+        -- justo los dias de poco viento.
+        brk     = 0.62,
         anchor  = { cx, cy },
         origin  = { ou, ov },
         basisX  = { (ex * wx + ey * wy) / cw, (ex * nx + ey * ny) / cn },
@@ -417,6 +463,10 @@ local function ensure()
         local ok, made = pcall(love.graphics.newShader, SOURCE)
         if ok and made then
             shader = made
+            -- Una linea en consola, que es la unica forma de saber desde fuera
+            -- si el mar lo esta pintando el shader o el azul de respaldo.
+            print(string.format("Rumbo | mar por shader: ok (%dx%d, derrota de %d puntos)",
+                                Constants.ART_W, Constants.ART_H, Surface.TRACK))
             -- El shader necesita algo sobre lo que correr, y un pixel blanco
             -- estirado a toda la pantalla es lo mas barato que hay: de la
             -- imagen no se lee nada, solo se aprovechan sus coordenadas.
@@ -464,7 +514,9 @@ function Surface.draw(state, sea, wake)
     shader:send("uHull",   f.hull)
     shader:send("uSpread", f.spread)
     shader:send("uArm",    f.arm)
-    shader:send("uWork",   f.work)
+    shader:send("uBow",    f.bow)
+    shader:send("uWash",   f.wash)
+    shader:send("uBreak",  f.brk)
     shader:send("uDeep",     { Palette.deep[1],    Palette.deep[2],    Palette.deep[3] })
     shader:send("uWater",    { Palette.sea[1],     Palette.sea[2],     Palette.sea[3] })
     shader:send("uShallow",  { Palette.shallow[1], Palette.shallow[2], Palette.shallow[3] })

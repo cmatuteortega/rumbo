@@ -390,18 +390,19 @@ do
           string.format("%.0f px de desvio", torcido))
 
     -- Amarrado no se siembra derrota nueva y la vieja se deshace: al final no
-    -- queda mas que el barco, y el relleno repite el espejo de popa.
+    -- queda mas que el barco, y el relleno repite el espejo de popa. Tarda lo
+    -- que dice WAKE_LIFE, que es el unico reloj que le queda a la estela.
     s.docked = "x"
-    for _ = 1, 30 * 20 do Sea.update(s, 1 / 30) end
+    for _ = 1, 30 * 35 do Sea.update(s, 1 / 30) end
     shot(s)
     check("y amarrado no queda derrota, solo el barco",
           sent.uTrack[3][1] == sent.uTrack[2][1]
           and sent.uTrack[3][2] == sent.uTrack[2][2])
 end
 
---== Espuma de proa =========================================================
+--== Espuma de proa y de popa ==============================================
 
-print("\nla espuma mide la velocidad")
+print("\nla espuma mide la velocidad, pero no toda igual")
 do
     -- Lo que era el bigote de tres tamanos es ahora la punta de la V, y sigue
     -- callandose por debajo de un tercio de andar: un barco que apenas se mueve
@@ -409,12 +410,52 @@ do
     local parado  = sail(0, 1.0, 0)              -- proa al viento: 10 % de andar
     local lanzado = sail(0, 1.0, math.pi / 2)
     shot(parado)
-    local quieto = sent.uWork
+    local proaQuieta, popaQuieta = sent.uBow, sent.uWash
     shot(lanzado)
-    check("en el ojo del viento no levanta agua", quieto == 0,
-          string.format("%.2f", quieto))
-    check("y a buen andar la levanta entera", sent.uWork > 0.5,
-          string.format("%.2f", sent.uWork))
+
+    check("en el ojo del viento la roda no rompe agua", proaQuieta == 0,
+          string.format("%.2f", proaQuieta))
+    check("y a buen andar la rompe entera", sent.uBow > 0.5,
+          string.format("%.2f", sent.uBow))
+
+    -- Pero la estela de POPA no cuelga de esa regla, y esto es una cicatriz:
+    -- con las dos atadas al mismo numero, la estela desaparecia justo virando
+    -- o con viento flojo, que es cuando el barco pierde andar.
+    check("pero la estela de popa aguanta aunque se pierda andar",
+          popaQuieta > 0.3,
+          string.format("%.2f andando al diez por ciento", popaQuieta))
+
+    -- Y el blanco de la estela va por su cuenta: el mar rompe solo si el
+    -- viento da para ello, una estela rompe siempre.
+    shot(sail(0, 0.55, math.pi / 2))
+    check("y en calma la estela puede romper en blanco aunque el mar no",
+          sent.uBreak < 1.0 and sent.uCut[3] > 1.0,
+          string.format("escalon %.2f la estela, %.2f el mar",
+                        sent.uBreak, sent.uCut[3]))
+end
+
+--== La estela no se acorta con el andar ====================================
+
+print("\nla estela mide lo mismo se corra o no")
+do
+    -- El fallo que se vio jugando: medida en segundos, un barco lento dejaba
+    -- un rabito que se apagaba antes de llegar al borde de la pantalla.
+    local function largo(state)
+        shot(state)
+        local most = 0
+        for i = 1, #sent.uTrack do
+            if sent.uTrack[i][4] > 0.02 then
+                most = math.max(most, sent.uTrack[i][3])
+            end
+        end
+        return most
+    end
+
+    local rapido = largo(sail(0, 1.00, math.pi / 2, 30))
+    local lento  = largo(sail(0, 0.55, math.pi / 2 + math.pi * 0.42, 30))
+    check("un barco lento deja una estela comparable a la de uno lanzado",
+          lento > rapido * 0.5,
+          string.format("%.0f px lento contra %.0f px lanzado", lento, rapido))
 end
 
 --== Recuento ==============================================================
