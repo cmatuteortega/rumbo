@@ -656,14 +656,21 @@ el centro, la unica velocidad que hay en pantalla es la del mar, y el ojo la
 compara con lo unico que tiene a mano — el casco parado.
 
 Asi que la escala del desfile la pone `Ship.BASE_SPEED`, siete pixeles por
-segundo: la ola desfila hasta siete y la racha hasta catorce (`Sea.WAVE_DRIFT`,
-`Sea.GUST_DRIFT`, atados por la prueba). La racha puede doblar a la ola porque
-es el viento **tocando** la superficie y no la superficie moviendose; mas ya es
-otra vez marcha atras. El vaiven del tren de olas va por el mismo camino: seis
-segundos de respiracion, que es lo que tarda una mar de verdad.
+segundo: la ola desfila hasta tres y medio —la **mitad** de lo que anda el
+barco— y la racha hasta catorce (`Sea.WAVE_DRIFT`, `Sea.GUST_DRIFT`, atados por
+la prueba). La racha puede correr mas que la ola porque es el viento **tocando**
+la superficie y no la superficie moviendose; el doble del barco es el techo, y
+mas ya es otra vez marcha atras. El vaiven del tren de olas va por el mismo
+camino: seis segundos de respiracion, que es lo que tarda una mar de verdad.
+
+La ola va a la mitad y no a la par por una razon que solo se ve jugando: **el
+agua no desfila sola**, se le suma lo que el barco la cruza. Con la ola igualada
+al casco, ceñir sumaba las dos velocidades y el mar volvia a irse al doble. A la
+mitad la suma cae donde tiene que estar, y de propina el desfile pasa a decir el
+rumbo: en popa el agua casi se para, ciñendo corre.
 
 La primera version desfilaba a treinta y uno y las rachas a noventa y seis —
-siete y catorce veces lo que anda el barco. Tenia todo lo demas bien y aun asi
+cuatro y catorce veces lo que anda el barco. Tenia todo lo demas bien y aun asi
 el mar se veia nervioso, porque el error no estaba en ningun trazo sino en el
 reloj.
 

@@ -55,9 +55,18 @@ Sea.SCENERY_CELL = 250  -- islas y escollos
 -- puede correr mas que el barco que lo cruza, o el barco parece anclado.
 --
 -- Las rachas si pueden ir mas deprisa que la ola -- son el viento tocando la
--- superficie, no la superficie moviendose --, pero el doble es el techo:
--- tests/test_sea.lua las ata a las dos contra Ship.BASE_SPEED.
-Sea.WAVE_DRIFT = { 1.5, 5.5 }
+-- superficie, no la superficie moviendose --, pero el doble del barco es el
+-- techo: tests/test_sea.lua las ata a las dos contra Ship.BASE_SPEED.
+--
+-- La ola va a la MITAD de lo que anda el barco, no a lo mismo, y la razon es
+-- que el agua NO desfila sola: en pantalla se le suma lo que el barco la
+-- cruza, y ese sumando es el grande. Igualar los dos numeros hacia dos cosas
+-- malas a la vez -- ciñendo se sumaban y el mar se iba a trece pixeles por
+-- segundo, y en popa se RESTABAN hasta cero y el mar se quedaba clavado, que
+-- es lo que se lee como pantalla colgada. A la mitad, ceñir baja a diez y en
+-- popa quedan tres y pico: el desfile pasa a decir el rumbo en vez de
+-- desbocarse por un lado y morirse por el otro.
+Sea.WAVE_DRIFT = { 0.75, 2.75 }
 Sea.GUST_DRIFT = { 4.0, 10.0 }
 
 --==========================================================================
