@@ -663,11 +663,12 @@ noventa y seis, cuatro y catorce veces lo que anda el barco, y encima se les
 sumaba el barco. Un campo de agua que corre por su cuenta no se lee como viento
 — se lee como que el casco **cia a toda maquina**.
 
-Ahora la ola hace **siete decimas** de pixel por segundo y la racha dos y pico:
-el agua esta practicamente quieta y lo que desfila es el barco pasando por ella,
-que es exactamente como se ve el mar desde una cubierta. El vaiven del tren de
-olas va por el mismo camino — medio minuto por respiracion, que es lo que tarda
-una mar de fondo en pasar.
+Ahora la ola hace **dos con uno** pixeles por segundo y la racha ocho y pico: el
+agua va despacio y lo que desfila es sobre todo el barco pasando por ella, que
+es exactamente como se ve el mar desde una cubierta. El vaiven del tren de olas
+va atado al desfile —diez segundos por respiracion con viento duro— porque las
+dos cosas son el mismo mar, y descuadrarlas se nota: agua que corre sin
+respirar, o que respira sin correr.
 
 ### El mar aceleraba con las horas de partida
 
@@ -685,8 +686,8 @@ Lo que se ve moverse no es `v`, es
     d(t · v(t))/dt  =  v  +  t · dv/dt
 
 y el segundo sumando crece con las horas sin techo ninguno. Medido: a la hora de
-travesia las olas iban a 3 px/s en vez de a 0,7; a las dos, a 9,9; a las ocho, a
-39,7 —mas deprisa que el mar original que llevabamos tres arreglos intentando
+travesia las olas iban a 3 px/s en vez de a 0,7 (los valores de entonces); a las
+dos, a 9,9; a las ocho, a 39,7 —mas deprisa que el mar original que llevabamos tres arreglos intentando
 calmar— y las rachas a 146, con el tren de olas hirviendo a 7,6 radianes por
 segundo, un ciclo entero por segundo.
 
@@ -700,17 +701,22 @@ instante vean la misma ola— no lo miraba nadie.
 La leccion general: **un ritmo que cambia se integra, no se multiplica por el
 reloj**. La prueba lo mide a 0, 1, 8 y 72 horas de partida.
 
-Dos facturas que conviene saberse:
+Los dos limites que fijan esos numeros, y el de abajo no es el obvio:
 
-* el desfile **ya no dice hacia donde** sopla; a siete decimas contra los diez
-  del barco no se aprecia. De donde sopla lo siguen diciendo las orientaciones,
-  que es la lectura buena: la cresta peinada contra el viento y la racha a
-  favor, a noventa grados una de otra.
-* **amarrado el barco no cruza nada**, asi que en puerto el agua se queda casi
-  parada. El suelo esta en media decima de pixel por segundo y la prueba lo
-  vigila: por debajo de eso no hay animacion a este grano y una pantalla
-  identica cuadro tras cuadro se lee como colgada — la leccion del corcho del
-  redal.
+* el **techo** lo pone el barco. Ni la ola ni la racha pueden adelantar a
+  `Ship.BASE_SPEED` (la racha llega al doble; para eso es viento **tocando** la
+  superficie y no la superficie moviendose).
+* el **suelo** lo pone estar amarrado. Navegando, lo que se ve moverse es sobre
+  todo el barco cruzando el campo y el desfile casi no cuenta; en puerto el
+  barco no cruza nada y el desfile se queda **solo** en pantalla. Estuvieron en
+  siete decimas y ahi el mar tardaba 274 s en cruzar la pantalla —una pantalla
+  quieta, que es la leccion del corcho del redal—; a dos con uno tarda 91 s y se
+  lee como agua.
+
+La factura de tenerlos bajos, para que conste: el desfile apenas **dice hacia
+donde** sopla. De donde sopla lo siguen diciendo las orientaciones, que es la
+lectura buena: la cresta peinada contra el viento y la racha a favor, a noventa
+grados una de otra.
 
 ### La estela es el bigote de proa, estirado
 

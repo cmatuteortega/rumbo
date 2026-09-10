@@ -52,29 +52,40 @@ Sea.SCENERY_CELL = 250  -- islas y escollos
 -- el campo: eso ultimo son otros diez pixeles por segundo y no sale de aqui.
 --
 -- El mar viejo desfilaba a treinta y uno y las rachas a noventa y seis --
--- cuatro y catorce veces lo que anda el barco. Ahora la ola hace siete
--- decimas y la racha dos y pico: el agua esta practicamente quieta y lo que
--- desfila es el barco pasando por ella, que es como se ve el mar desde una
--- cubierta. Un campo de agua corriendo por su cuenta no se lee como viento --
--- se lee como que el barco cia a toda maquina.
+-- cuatro y catorce veces lo que anda el barco. Ahora la ola hace dos con uno y
+-- la racha ocho y pico: el agua va despacio y lo que desfila es sobre todo el
+-- barco pasando por ella, que es como se ve el mar desde una cubierta. Un campo
+-- de agua corriendo por su cuenta no se lee como viento -- se lee como que el
+-- barco cia a toda maquina.
 --
--- La factura de tenerlo tan bajo hay que saberla: el desfile ya no dice HACIA
--- DONDE sopla, porque a siete decimas contra los diez del barco no se aprecia.
--- De donde sopla lo siguen diciendo las orientaciones -- la cresta peinada
--- contra el viento y la racha a favor, a noventa grados una de otra --, que es
--- la lectura buena y la que vigila la prueba. Si algun dia hace falta
--- recuperar la otra, se sube esto, no se toca el barco.
+-- Estos numeros salen de dos limites, y el de abajo no es el obvio:
 --
--- La racha va mas deprisa que la ola porque es el viento TOCANDO la
--- superficie, no la superficie moviendose. El techo de las dos sigue siendo
--- Ship.BASE_SPEED, y ahi las ata tests/test_sea.lua.
-Sea.WAVE_DRIFT = { 0.15, 0.55 }
-Sea.GUST_DRIFT = { 0.8, 2.0 }
+--   * el TECHO lo pone el barco. Ni la ola ni la racha pueden adelantar a
+--     Ship.BASE_SPEED (la racha llega al doble, que para eso es viento TOCANDO
+--     la superficie y no la superficie moviendose).
+--   * el SUELO lo pone estar AMARRADO. Navegando, lo que se ve moverse es
+--     sobre todo el barco cruzando el campo -- sus diez pixeles por segundo --
+--     y el desfile casi no cuenta; en puerto el barco no cruza nada y el
+--     desfile se queda SOLO en pantalla. Estuvieron en siete decimas y ahi el
+--     mar tardaba doscientos setenta segundos en cruzar la pantalla, que es
+--     una pantalla quieta, que es la leccion del corcho del redal. A dos con
+--     uno tarda noventa y se lee como agua.
+--
+-- Y una cosa que se pierde por tenerlos bajos, para que conste: el desfile
+-- apenas dice HACIA DONDE sopla. De donde sopla lo siguen diciendo las
+-- orientaciones -- la cresta peinada contra el viento y la racha a favor, a
+-- noventa grados una de otra --, que es la lectura buena y la que vigila la
+-- prueba. Si algun dia hace falta recuperar la otra se sube esto, no se toca
+-- el barco.
+Sea.WAVE_DRIFT = { 0.45, 1.65 }
+Sea.GUST_DRIFT = { 2.4, 6.0 }
 
 -- Y a que ritmo respira el tren de olas, en radianes por segundo, con el mismo
--- reparto {calma, lo que suma el viento}. Medio minuto por vaiven con viento
--- duro: una mar de fondo tarda en pasar y no tiembla.
-Sea.SURGE_RATE = { 0.09, 0.11 }
+-- reparto {calma, lo que suma el viento}. Diez segundos por vaiven con viento
+-- duro: una mar de fondo tarda en pasar y no tiembla. Sube y baja con el
+-- desfile, porque las dos cosas son el mismo mar y descuadrarlas se nota --
+-- agua que corre sin respirar, o que respira sin correr.
+Sea.SURGE_RATE = { 0.27, 0.33 }
 
 --==========================================================================
 -- El desfile
@@ -93,12 +104,12 @@ Sea.SURGE_RATE = { 0.09, 0.11 }
 --     d(t * v(t))/dt  =  v  +  t * dv/dt
 --
 -- y el segundo sumando crece con las horas de partida sin techo ninguno. Medido
--- en el juego: a la hora de travesia las olas iban a 3 px/s en vez de a 0,7; a
--- las dos, a 9,9; a las ocho, a 39,7 -- mas deprisa que el mar viejo que
--- llevabamos tres arreglos intentando calmar -- y las rachas a 146, con el
--- tren de olas hirviendo a 7,6 radianes por segundo. Y pasaba AMARRADO, que es
--- donde canta, porque en puerto el barco no cruza el campo y el desfile se
--- queda solo en pantalla.
+-- en el juego con los valores de entonces (la ola a 0,7): a la hora de travesia
+-- iba a 3 px/s, a las dos a 9,9, a las ocho a 39,7 -- mas deprisa que el mar
+-- viejo que llevabamos tres arreglos intentando calmar -- y las rachas a 146,
+-- con el tren de olas hirviendo a 7,6 radianes por segundo. Y pasaba AMARRADO,
+-- que es donde canta, porque en puerto el barco no cruza el campo y el desfile
+-- se queda solo en pantalla.
 --
 -- Integrando, el ritmo es el ritmo: rolar el viento cambia hacia donde se
 -- mueve el campo de aqui en adelante, no lo que ya habia andado.
@@ -517,12 +528,13 @@ local function drawWaves(state)
         -- un poco despues. Con una fase suelta por ola el mar hierve; con
         -- esta, respira.
         --
-        -- Respira MUY despacio, medio minuto por vaiven (SURGE_RATE). Empezo
-        -- en dos radianes por segundo -- tres subidas y bajadas cada diez
-        -- segundos -- y era la otra mitad del agua nerviosa: el desfile ponia
-        -- la carrera y esto ponia el hervor. La fase tambien se integra, y por
-        -- lo mismo: multiplicada por state.time llegaba a 7,6 rad/s a las ocho
-        -- horas, que es el mar entero hirviendo una vez por segundo.
+        -- Respira despacio, diez segundos por vaiven con viento duro
+        -- (SURGE_RATE). Empezo en dos radianes por segundo -- tres subidas y
+        -- bajadas cada diez segundos -- y era la otra mitad del agua nerviosa:
+        -- el desfile ponia la carrera y esto ponia el hervor. La fase tambien
+        -- se integra, y por lo mismo: multiplicada por state.time llegaba a
+        -- 7,6 rad/s a las ocho horas, que es el mar entero hirviendo una vez
+        -- por segundo.
         local along = wx * tx + wy * ty
         local lift = math.sin(along * 0.075 - surge) * (0.5 + 2.2 * sea)
 

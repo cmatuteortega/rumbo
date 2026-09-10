@@ -160,11 +160,13 @@ familias van siempre a noventa grados y giran con el rumbo; la fuerza del viento
 —estirada a [0,1] en `Sea.state`, porque el rango del viento es corto— decide
 cuantos trazos hay, como de grandes y si alguno rompe en blanco, y un ruido de
 manchas (`SWELL_CELL`) hace que un trozo de mar este picado y el de al lado
-liso, y el agua se mueve MUY poco por si sola
-(`Sea.WAVE_DRIFT`, `Sea.GUST_DRIFT`: siete decimas de pixel por segundo la ola)
-porque en pantalla se le suma lo que el barco cruza el campo, que son diez, y es
-el sumando grande — un mar que corre por su cuenta no se lee como viento sino
-como que el barco cia. Con viento flojo quedan cuatro rizos y ni una racha.
+liso, y el agua se mueve despacio por si sola
+(`Sea.WAVE_DRIFT`, `Sea.GUST_DRIFT`, `Sea.SURGE_RATE`: 2,1 px/s la ola con
+viento duro) porque en pantalla se le suma lo que el barco cruza el campo, que
+son diez, y es el sumando grande — un mar que corre por su cuenta no se lee como
+viento sino como que el barco cia. El suelo de esos numeros lo pone estar
+AMARRADO, que es cuando el desfile se queda solo en pantalla: a siete decimas el
+mar tardaba 274 s en cruzarla y se leia colgado. Con viento flojo quedan cuatro rizos y ni una racha.
 Los campos que
 desfilan (olas, rachas, y las manchas de agua honda) no se reciclan con un
 modulo —eso da un tiron cada vuelta— sino desplazando el punto alrededor del
@@ -172,7 +174,7 @@ cual se barren las celdas. Y lo andado por ese punto se INTEGRA cuadro a cuadro
 en `Sea.update`, nunca `state.time` por el ritmo de ahora: como el viento rola y
 refresca sin parar, multiplicar el tiempo vivido por el ritmo del momento
 reescribe hacia atras el desfile entero y el mar ACELERA con las horas de
-partida (a las ocho, 39,7 px/s en vez de 0,7). `tests/test_sea.lua` lo mide a
+partida (a las ocho, 39,7 px/s en vez de 0,7, que eran los valores de entonces). `tests/test_sea.lua` lo mide a
 0, 1, 8 y 72 horas. Y los trazos no se pintan segun se recorren: se
 apuntan por sprite y se sueltan al final todos los de uno seguidos, porque con
 treinta y seis sprites entremezclados al azar cada trazo rompia el envio del
