@@ -18,7 +18,7 @@ love .                          # el juego
 lua5.1 tests/test_sim.lua       # simulacion, sin ventana - correr tras TODO cambio de balance
 lua5.1 tests/test_deck.lua      # la gente de cubierta - tras tocar src/deck.lua o las caras
 lua5.1 tests/test_halyard.lua   # la driza: fisica y geometria - tras tocar src/halyard.lua
-lua5.1 tests/test_sea.lua       # el mar: orientacion y estela - tras tocar src/sea.lua
+lua5.1 tests/test_sea.lua       # el mar - tras tocar src/sea.lua o src/surface.lua
 ```
 
 `test_sim.lua` prueba modulos que no requieren `love` y por eso corre tal cual.
@@ -29,23 +29,25 @@ Los otros dos prueban DIBUJO —viven en pixeles de arte— asi que montan un
 los dos fallos de la driza (doblarse sobre si misma y no estarse quieta en
 reposo) no se ven mirando la pantalla un rato, solo midiendo.
 
-`test_sea.lua` lee que sprite de cada familia se ha usado y donde. Vigila tres
-cosas que tampoco se ven a ojo: que **ni una** llamada pase rotacion (el love
-de mentira peta si alguien lo intenta), que las crestas y las rachas salgan
-siempre a noventa grados y giren con el rumbo, y que con viento flojo haya de
-verdad menos trazos y ninguno blanco. Ademas mide que la V de la estela se abra
-con lo que el barco anda y no con el reloj.
+`test_sea.lua` lee lo que se pinta y, desde que el agua es un shader, tambien
+los UNIFORMES que se le mandan: ahi viven la direccion del peinado y la cuenta
+de espuma, asi que el mar se mide sin tarjeta grafica. Vigila cuatro cosas que
+no se ven a ojo: que **ni una** llamada pase rotacion (el love de mentira peta
+si alguien lo intenta), que el eje largo del campo caiga justo donde cae el
+viento en pantalla y el corto lo cruce en angulo recto, que con viento flojo
+haya de verdad menos espuma y que en el agua libre el blanco sea IMPOSIBLE, y
+que el agua desfile a sotavento y corra bajo el barco cuando anda. Mide ademas
+el TAMANO de lo que se le manda al shader — la coordenada del campo, las fases,
+el grano —, que es lo unico que separaba el mar que se veia en PC del que no se
+veia en el movil. De la estela
+mide lo suyo: que la calle sea la manga del casco DIBUJADO, que la V acabe en
+punta en la roda, que se abra con lo que el barco anda y no con el reloj, y que
+virando la derrota se salga de la crujia.
 `test_deck.lua` tambien: `src/art.lua` no llama a `love` hasta que se le pide un
 sprite, asi que la geometria del casco y la reserva de caras se miden sin
 ventana. Esta ahi porque un tripulante que sale por la borda pasa cada varios
 minutos, en la punta de un seno, y con el trapo tapando media cubierta no se
 pilla mirando.
-`test_halyard.lua` prueba DIBUJO —la driza vive en pixeles de arte— asi que se
-monta un `love` de mentira que apunta lo que se pinta, y del dibujo se leen el
-nudo, la comba y el arco. Esta ahi porque los dos fallos de la driza (doblarse
-sobre si misma y no estarse quieta en reposo) no se ven mirando la pantalla un
-rato, solo midiendo.
-
 No hay build ni gestor de dependencias. Tras una edicion amplia:
 
 ```sh
@@ -71,15 +73,17 @@ cana, puntos y derrotas con rectangulos de 1x1. La carta es ademas la unica
 pantalla con el norte arriba, y eso es a proposito: un papel sobre una mesa no
 gira con el barco.
 
-Si anades algo con orientacion, tienes dos salidas y ninguna es rotar en draw:
-**un sprite por rumbo**, o dibujarlo con primitivas como el timon.
+Si anades algo con orientacion, tienes tres salidas y ninguna es rotar en draw:
+**un sprite por rumbo**, dibujarlo con primitivas como el timon, o calcularlo
+por pixel con un shader.
 
-El mar toma la primera. Las islas y los puertos siguen siendo manchas sin
-direccion, pero las CRESTAS si tienen una —se peinan contra el viento, asi que
-van en diagonal cuando el viento va en diagonal— y por eso cada trazo esta
-pintado doce veces, una cada quince grados (`Art.SEA_DIRS`), y `src/sea.lua`
-elige la orientacion por el angulo en pantalla. Doce, y no ocho, porque a este
-tamano de pixel con ocho se ve saltar el mar al virar.
+El agua toma la tercera (`src/surface.lua`): un shader no muestrea una rejilla
+de pixeles, la evalua, asi que el oleaje puede peinarse a cualquier angulo sin
+deshacerse. Las islas y los puertos siguen siendo manchas sin direccion y por
+eso les basta un sprite. Para un DIBUJO con orientacion —un barco enemigo— la
+buena sigue siendo la primera: un sprite por rumbo. El oleaje estuvo asi hasta
+que paso a shader (doce trazos por familia, uno cada quince grados) y el
+historial de `src/art.lua` tiene el patron.
 
 **Solo pixeles enteros.** El mundo se dibuja dentro de un `scale()` entero
 (`Constants.ART`) y toda posicion se redondea. `Art.draw`/`Art.drawCentered`
@@ -112,6 +116,15 @@ desde una plantilla resucitaria tripulantes despedidos.
 posicion, semilla o tiempo como entrada. Si te ves anadiendo una semilla al
 estado guardado, probablemente hay una forma de derivarlo.
 
+Dos trampas de `Util.hash01`, las dos comprobadas: su **tercer argumento no hace
+nada** (entra multiplicado por 2147483647, que es el modulo, asi que se anula;
+para pedir dos numeros distintos hay que mover los dos primeros), y es **casi
+afin**, asi que dos posiciones vecinas se le parecen. Para lo que hace en el
+juego — un puerto, una cara, un precio — da igual, y por eso no se toca: al
+cambiarla cambiarian los mundos ya guardados. Pero no sirve para llenar una
+rejilla de ruido; el grano del mar (`src/surface.lua`) se mezcla aparte y
+explica por que.
+
 **`World.step` es correcto a cualquier `dt`.** Se llama con 1/30 jugando y con
 2 s al ponerse al dia. Nada dentro puede depender del tamano del paso; el
 viento, en particular, es funcion pura de `state.time`.
@@ -139,8 +152,8 @@ tiene tres pantallas: `boot` (genera el arte con barra de progreso), `voyage`
 esta todo el balance. La cuarta pantalla, `chart.lua`, es la carta de marear:
 ensena los puertos descubiertos y fija rumbo a uno (`World.setCourse`), y a
 partir de ahi el timonel corrige solo y el barco atraca al llegar. El dibujo
-del mundo es `src/sea.lua` (camara + mar) mas `voyage.lua` (barco y cubierta);
-el de la interfaz es `src/ui.lua` (inmediata) y `src/hud.lua`. La tripulacion
+del mundo es `src/sea.lua` (camara, estela, islas) mas `src/surface.lua` (el
+agua, por shader) mas `voyage.lua` (barco y cubierta); el de la interfaz es `src/ui.lua` (inmediata) y `src/hud.lua`. La tripulacion
 que se ve andar por el barco es `src/deck.lua`, y es SOLO dibujo: cada uno saca
 su cara de la reserva de `assets/crew_pjNN.png` segun el hash de su nombre
 (`Crew.face`) y su paseo es funcion pura de `state.time`, sin estado que
@@ -148,25 +161,64 @@ guardar. Los destinados se remueven en su puesto y los que no tienen destino
 pasean el barco entero, por dentro de la silueta de `Art.hullHalf` y siempre
 por DEBAJO del trapo.
 
-El mar de `sea.lua` no guarda nada y todo sale del viento y de la velocidad. Las
-crestas se peinan CONTRA el viento y las rachas corren A FAVOR, asi que las dos
-familias van siempre a noventa grados y giran con el rumbo; la fuerza del viento
-—estirada a [0,1] en `Sea.state`, porque el rango del viento es corto— decide
-cuantos trazos hay, como de grandes y si alguno rompe en blanco, y un ruido de
-manchas (`SWELL_CELL`) hace que un trozo de mar este picado y el de al lado
-liso. Con viento flojo quedan cuatro rizos y ni una racha. Los campos que
-desfilan (olas, rachas, y las manchas de agua honda) no se reciclan con un
-modulo —eso da un tiron cada vuelta— sino desplazando el punto alrededor del
-cual se barren las celdas. Y los trazos no se pintan segun se recorren: se
-apuntan por sprite y se sueltan al final todos los de uno seguidos, porque con
-treinta y seis sprites entremezclados al azar cada trazo rompia el envio del
-anterior.
+La superficie es `src/surface.lua`: un voronoi de espuma calculado por pixel en
+un lienzo a escala de ARTE (asi cada invocacion es un pixel del juego y la
+rejilla sale cuadrada sola), con la paleta cerrada en cinco escalones y ni un
+color entre medias. El campo se mide en dos ejes, uno a lo largo del viento y
+otro cruzado, y el cruzado mide MAS mundo por celda: de ahi salen las vetas de
+espuma cruzadas al viento. La fuerza del viento —estirada a [0,1] en
+`Sea.state`, porque el rango del viento es corto— decide cuanto se estiran las
+vetas, cuanta espuma hay y si puede haber blanco; en calma el escalon del blanco
+se manda por encima de UNO, asi que no es que salgan pocas rompientes: no cabe
+ninguna. Todo eso se calcula en Lua (`Surface.frame`) y se manda como
+uniformes, que es lo que permite medirlo sin ventana.
 
-La estela son dos cosas: el remolino de popa, que se queda donde se solto, y los
-brazos de la V, que se abren con lo que el barco ANDA (`state.distance`, no el
-reloj) y por eso se doblan solos en una virada. Delante, el bigote de la roda en
-tres tamanos y unas salpicaduras a sotavento; los dos callan por debajo de
-`WORKING`, que es donde un barco deja de levantar agua.
+Tres cosas del shader parecen rarezas y no lo son, y las tres son lo mismo: en
+el mar no puede haber un numero grande. En un PC da igual; en un movil la
+precision del fragmento puede ser de once bits, y con once bits `fract()` de un
+numero de dos cifras ya no distingue nada. El sintoma es inconfundible y costo
+un desconcierto: el mar entero en azul liso, sin una veta de espuma, con la
+estela encima perfectamente visible -- porque la estela son distancias en
+pantalla, numeros pequenos y sin `fract` de por medio. Asi que: **el grano se
+LEE de una textura** en vez de calcularse con un hash aritmetico (los numeros
+intermedios de ese hash andan por el cincuenta, y ahi es donde se moria); **del
+origen solo viaja el decimal**, y las celdas enteras van como desplazamiento
+dentro de la textura, que es donde no cuestan precision; y **las fases del
+oleaje llegan envueltas en una vuelta**, porque un `sin()` de setecientos
+radianes es ruido en cuanto la maquina no es un PC. Ese grano no puede salir de
+`Util.hash01`: su tercer argumento no hace nada (entra multiplicado por el
+propio modulo) y ademas es casi afin, asi que repartido por una textura se lee
+como una rampa y no como ruido -- se mezcla en `src/surface.lua`, con un seno.
+
+Y una cuarta que no es de precision: el origen del campo se **arrastra** entre
+fotogramas (`Surface.update`, con lo que anda el barco mas lo que desfila el
+agua) en vez de calcularse desde `state.x`, porque el eje del campo gira con el
+viento y proyectar una posicion enorme sobre un eje que rola manda el mar
+disparado de lado en cuanto el viento rola un grado.
+
+La estela va DENTRO del agua y no encima: `src/sea.lua` le manda al shader la
+derrota (`wakeTrack` — los puntos por donde ha pasado el espejo, proyectados a
+pantalla, con lo andado desde cada uno y lo que le queda), y el shader mide la
+distancia de cada pixel a esa polilinea. De ahi salen el SURCO (dentro de la
+calle el campo se aplasta: es mar quitado, no espuma anadida), el HERVOR de popa
+y los BRAZOS de la V, que se abren con lo que el barco ANDA (`state.distance`,
+no el reloj) y por eso se doblan solos en una virada. La calle se cierra en
+punta en la roda —de ahi que la V acabe en pico delante de la proa— y por detras
+mide la MANGA ENTERA del sprite, leida de `Art.HULL_BOX`. Los brazos van
+multiplicados por la veta del propio oleaje para que salgan rotos: una linea
+limpia a este grano se lee como pintada encima. Ya no hay bigote de proa —la
+punta de la V lo es— y lo unico que sigue siendo sprite son las salpicaduras, a
+sotavento, porque una gota esta en el AIRE y no en el agua. La espuma de la
+estela tiene DOS compuertas y no una: por delante del espejo manda
+`bowFraction` (la regla de siempre: por debajo de `WORKING` la roda no rompe
+agua) y por detras `washFraction`, que se llena a 1,6 px/s. Atarlas al mismo
+numero fue un fallo que solo se vio jugando: la estela desaparecia justo
+virando o con viento flojo, que es cuando el barco pierde andar. Por lo mismo
+la estela se apaga por lo ANDADO (`WAKE_RUN`, 110 px) y no por el reloj —
+medida en segundos, un barco lento dejaba un rabito que se apagaba antes de
+llegar al borde de la pantalla—, y el blanco de la espuma del barco lleva su
+propio escalon (`uBreak`), aparte del techo que el viento le pone al mar: una
+estela es blanca haga el tiempo que haga.
 
 Los mandos que se usan navegando salen tocando SU puesto en cubierta, no de la
 columna de botones, y por eso el timon y el velamen dejan su hoja para el
@@ -235,15 +287,19 @@ que exista el PNG correspondiente en `assets/`, en cuyo caso gana el archivo.
   de `hud.lua` y lo que lo produzca o gaste en `Ship.rates`/`World.step`.
 * **Sprite**: fila en `SPRITES` de `src/art.lua` con su generador, y su entrada
   en la tabla de `assets/README.md`. Si lo que anades tiene ORIENTACION, no lo
-  rotes: registralo como familia, en el bucle de `SEA_DIRS`, y elige con
-  `Sea.orient`.
-* **Mar**: los trazos en `src/art.lua` (`gen.crest*`), el reparto en
-  `drawWaves` de `src/sea.lua` — cuantos hay (`density`), cual sale (`grade`) y
-  como se mueven. La mezcla importa mas que cada trazo: si la ola corriente
-  lleva color claro, la pantalla se llena de marcas brillantes iguales y el mar
-  se lee como LLUVIA. El blanco es solo de las rompientes, y sueltas. Correr
-  `tests/test_sea.lua` despues.
-  en la tabla de `assets/README.md`.
+  rotes: un sprite por rumbo, registrados en bucle.
+* **Mar**: `src/surface.lua`. El balance —cuanta espuma da cada viento, cuanto
+  se estiran las vetas, donde caen los escalones de color— esta en
+  `Surface.frame`, en Lua, y el shader solo evalua; la forma de la espuma (el
+  ancho de la veta, la octava fina, la sombra del dorso) esta en el GLSL. Y una
+  regla que no se ve mirando la pantalla de un PC: **ningun numero del campo
+  puede ser grande** — nada de coordenadas absolutas, nada de angulos de mas de
+  unas vueltas, y el grano de una textura y no de una cuenta. El precio de
+  saltarsela es que el mar desaparezca entero en el movil sin que en escritorio
+  se note nada. Vale para los dos: la mezcla importa mas que cada trazo, y si la mayoria de los
+  pixeles claros suben de color la pantalla se llena de marcas brillantes
+  iguales y el mar se lee como LLUVIA. El blanco es de las rompientes y va
+  suelto. Correr `tests/test_sea.lua` despues.
 * **Cara de tripulante**: subir `Crew.FACES` y dejar el `assets/crew_pjNN.png`
   que toque. `src/art.lua` las registra en bucle contra esa constante, asi que
   no hay lista que tocar; lo que si hay que dejar es respaldo generado, porque

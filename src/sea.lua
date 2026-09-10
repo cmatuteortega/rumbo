@@ -11,20 +11,24 @@
 -- Eso obligaba a que nada del mundo tuviera una orientacion propia -- islas y
 -- puertos siguen siendo manchas, que se leen igual desde cualquier demora --,
 -- pero el MAR si la tiene, y esconderla costaba caro: un oleaje que siempre
--- cruzaba la pantalla en horizontal no decia de donde soplaba el viento, se
--- veia igual con racha que en calma, y en una rejilla regular de trazos
--- iguales se leia la rejilla. Aqui las crestas se peinan contra el viento --
--- asi que van en diagonal cuando el viento va en diagonal --, y se dibujan por
--- la primera de las dos salidas que deja la regla: doce sprites, uno por
--- orientacion, elegidos por el angulo (ver SEA_DIRS en src/art.lua). Ni una
--- llamada de este archivo pasa rotacion.
+-- cruzaba la pantalla en horizontal no decia de donde soplaba el viento y se
+-- veia igual con racha que en calma. La superficie es hoy la tercera salida a
+-- ese apuro, y esta en `src/surface.lua`: un shader. No hay sprite que girar
+-- porque no hay sprite -- el agua se calcula por pixel --, asi que el mar
+-- puede peinarse en cualquier direccion sin tocar la regla. Antes de eso
+-- fueron doce sprites por trazo, uno cada quince grados, que es la primera
+-- salida que deja la regla y sigue siendo la buena para todo lo que si sea un
+-- dibujo.
 --
--- El bigote de proa es la excepcion contraria y por eso es facil: va pegado a
--- la pantalla y no al mundo, y la proa apunta siempre arriba, asi que no tiene
--- angulo que elegir.
+-- Lo que queda en este archivo es la camara y todo lo que el shader no puede
+-- saber por su cuenta: las islas y los puertos, que tienen sitio fijo en el
+-- mundo; las salpicaduras, que estan en el AIRE y no en el agua; y la DERROTA
+-- del barco, que es memoria -- por donde se ha pasado -- y que se le pasa al
+-- shader para que abra el surco y la V dentro del propio campo de espuma en
+-- vez de pintarlos encima.
 --
--- Ademas, nada del mar se guarda: olas, rachas, islas, escollos, estela y
--- salpicaduras son funcion pura de la posicion del mundo, de la semilla y del
+-- Ademas, nada del mar se guarda: superficie, islas, escollos, derrota y
+-- salpicaduras son funcion de la posicion del mundo, de la semilla y del
 -- tiempo. El mar es infinito y ocupa cero bytes.
 
 local Constants = require('src.constants')
@@ -33,13 +37,10 @@ local Util      = require('src.util')
 local Art       = require('src.art')
 local Ports     = require('src.ports')
 local Ship      = require('src.ship')
+local Surface   = require('src.surface')
 
 local Sea = {}
 
-Sea.WAVE_CELL    = 10   -- una ola por celda de mundo, si el mar da para ella
-Sea.SWELL_CELL   = 96   -- tamano de las manchas de mar picado y de mar llano
-Sea.GUST_CELL    = 46
-Sea.CALM_CELL    = 110  -- manchas de agua honda
 Sea.SCENERY_CELL = 250  -- islas y escollos
 
 --==========================================================================
@@ -57,20 +58,14 @@ function Sea.project(state, wx, wy)
     return cx + across, cy - along
 end
 
--- Angulo en PANTALLA de una direccion del mundo. Es lo unico que hace falta
--- para elegir sprite orientado: la misma direccion del mundo cae a un angulo
--- distinto en cada rumbo, y eso es exactamente lo que hace que virar repeine
--- el mar.
+-- Angulo en PANTALLA de una direccion del mundo. La misma direccion del mundo
+-- cae a un angulo distinto en cada rumbo, y eso es exactamente lo que hace que
+-- virar repeine el mar. No lo usa el dibujo -- el shader lleva la direccion en
+-- sus ejes --, pero es la contrapartida de Sea.project y es con lo que
+-- tests/test_sea.lua comprueba hacia donde ha quedado peinada la superficie.
 function Sea.screenAngle(state, ux, uy)
     local sinH, cosH = math.sin(state.heading), math.cos(state.heading)
     return math.atan2(-(ux * sinH - uy * cosH), ux * cosH + uy * sinH)
-end
-
--- Sprite de una familia orientada. Un trazo no tiene punta, asi que su
--- orientacion vive en media vuelta: doce sprites cubren los 180 grados.
-function Sea.orient(id, angle)
-    local d = math.floor(angle / math.pi * Art.SEA_DIRS + 0.5) % Art.SEA_DIRS
-    return id .. (d + 1)
 end
 
 -- Radio en pixeles de mundo que hay que barrer para cubrir la pantalla desde
@@ -87,10 +82,9 @@ local function onScreen(x, y, margin)
 end
 
 -- Recorre las celdas de tamano `cell` que cubren la pantalla alrededor de un
--- punto. Todo el mar se dibuja con esto, y va aparte porque los campos que
--- DESFILAN (olas, rachas) no se barren alrededor del barco sino alrededor del
--- barco menos el desplazamiento del campo: asi el campo avanza sin saltos, en
--- vez del tiron que daba reciclar el desfile con un modulo.
+-- punto. Es como se siembra todo lo que esta CLAVADO en el mundo -- islas y
+-- escollos --, que es lo unico que queda de sembrar por celdas desde que el
+-- agua la pinta un shader.
 local function forEachCell(bx, by, cell, extra, fn)
     local radius = Sea.viewRadius() + (extra or 0)
     local c0x = math.floor((bx - radius) / cell)
@@ -99,62 +93,6 @@ local function forEachCell(bx, by, cell, extra, fn)
     local c1y = math.floor((by + radius) / cell)
     for cy = c0y, c1y do
         for cx = c0x, c1x do fn(cx, cy) end
-    end
-end
-
--- Ruido de valor: hash en las esquinas de una rejilla e interpolado suave por
--- dentro. Es lo que da MANCHAS -- un trozo de mar picado, otro liso -- en vez
--- de una rugosidad uniforme, que es lo que delataba la rejilla de olas.
-local function noise(x, y, salt)
-    local x0, y0 = math.floor(x), math.floor(y)
-    local fx, fy = x - x0, y - y0
-    fx = fx * fx * (3 - 2 * fx)
-    fy = fy * fy * (3 - 2 * fy)
-    local a = Util.hash01(x0,     y0,     salt)
-    local b = Util.hash01(x0 + 1, y0,     salt)
-    local c = Util.hash01(x0,     y0 + 1, salt)
-    local d = Util.hash01(x0 + 1, y0 + 1, salt)
-    return Util.lerp(Util.lerp(a, b, fx), Util.lerp(c, d, fx), fy)
-end
-
---==========================================================================
--- Cola de trazos
---==========================================================================
-
--- El mar no se pinta segun se recorre: se APUNTA por sprite y se pinta al
--- final, todos los trazos de un sprite seguidos.
---
--- Es la unica factura que pasa tener el mar orientado. LÖVE junta en un solo
--- envio los dibujos consecutivos de la MISMA imagen, y con doce orientaciones
--- por tres tamanos entremezcladas al azar cada trazo rompia el envio del
--- anterior: trescientos y pico envios por cuadro donde antes habia dos. Con la
--- cola son una docena, que es lo que habia. Las colas se reutilizan de un
--- cuadro para otro (solo se pone n a cero) para no dar de comer al recolector
--- treinta veces por segundo.
---
--- De propina fija el ORDEN: rizos debajo, olas encima, rompientes despues y
--- rachas al final, que es la unica capa que cruza a las demas.
-local ORDER = { "sea.ripple", "sea.wave", "sea.swell", "sea.gust" }
-local queue = {}
-
-local function enqueue(id, x, y)
-    local q = queue[id]
-    if not q then q = { n = 0 }; queue[id] = q end
-    local n = q.n
-    q[n + 1], q[n + 2] = x, y
-    q.n = n + 2
-end
-
-local function flushStrokes()
-    for _, fam in ipairs(ORDER) do
-        for d = 1, Art.SEA_DIRS do
-            local id = fam .. d
-            local q = queue[id]
-            if q and q.n > 0 then
-                for i = 1, q.n, 2 do Art.drawCentered(id, q[i], q[i + 1]) end
-                q.n = 0
-            end
-        end
     end
 end
 
@@ -170,53 +108,82 @@ function Sea.state(state)
     return Util.clamp((state.wind.strength - 0.50) / 0.50, 0, 1)
 end
 
--- Direccion HACIA la que sopla, en el mundo. Es la del desfile de todo el mar.
-local function windVector(state)
-    return Util.headingToVector(Util.wrapAngle(state.wind.from + math.pi))
-end
-
 -- Velocidad del barco como fraccion de lo que da una buena singladura. No se
 -- mide contra Ship.BASE_SPEED, que es la velocidad de un barco perfecto en el
 -- traves y no la ve nadie: contra eso, la estela de una partida nueva no se
 -- veia nunca.
 local REF_SPEED = 4.5
--- Por debajo de esto la roda no levanta agua: ni bigote ni salpicaduras. Un
--- barco que apenas se mueve con espuma en la proa miente, y en el ojo del
--- viento -- donde se anda al diez por ciento -- se pasa un buen rato asi.
+-- Por debajo de esto la roda no levanta agua: ni espuma de proa ni
+-- salpicaduras. Un barco que apenas se mueve con espuma en la proa miente, y
+-- en el ojo del viento -- donde se anda al diez por ciento -- se pasa un buen
+-- rato asi.
 local WORKING = 0.30
 local function speedFraction(state)
     if state.docked then return 0 end
     return Util.clamp(Ship.speed(state) / REF_SPEED, 0, 1)
 end
 
+-- La roda rompe agua: contado desde WORKING, asi que en el ojo del viento vale
+-- cero y no hay bigote. Manda por DELANTE del espejo de popa.
+local function bowFraction(state)
+    local f = speedFraction(state)
+    if f <= WORKING then return 0 end
+    return (f - WORKING) / (1 - WORKING)
+end
+
+-- La estela de popa: se llena mucho antes, porque un barco deja rastro a
+-- cualquier velocidad a la que se mueva de verdad. Ponerle la regla de la roda
+-- fue un error que costo verse: la estela desaparecia justo cuando mas falta
+-- hace -- virando, o con viento flojo --, que es cuando el barco va despacio y
+-- cuando mas se agradece ver que sigue andando. A 1,6 px/s ya esta al maximo.
+local WASH = 0.35
+local function washFraction(state)
+    return Util.clamp(speedFraction(state) / WASH, 0, 1)
+end
+
 --==========================================================================
--- Estela y salpicaduras
+-- La derrota, y las salpicaduras
 --==========================================================================
 --
 -- Nada de esto se guarda: es adorno, y al volver a la partida el barco aparece
 -- con el mar limpio detras (Sea.reset).
 --
--- La estela son dos cosas distintas y por eso no basta con una fila de puntos:
+-- Aqui NO se dibuja la estela. Lo que se lleva es la DERROTA -- por donde ha
+-- pasado el espejo de popa, un punto cada pocos pixeles de mundo, con lo que
+-- el barco llevaba andado en cada uno --, y de eso saca el shader el surco, el
+-- hervor de popa y la V (ver `wakeTrack` y `src/surface.lua`).
 --
---   * el REMOLINO de popa, que se queda donde se solto y se deshace. Es lo que
---     habia antes, y solo, contaba una mentira: se veia igual a dos nudos que
---     a seis, y en una virada quedaba una raya recta que no era la derrota.
---   * los BRAZOS -- la V de Kelvin --, que se abren detras del barco a un
---     angulo fijo. El angulo es fijo pero la V se abre a lo largo de lo que el
---     barco AVANZA, asi que un barco parado no tiene V, uno rapido la tiene
---     larga, y virando se dobla sola porque cada punto guarda su propia
---     travesia. Eso es lo que hace que la estela diga el rumbo y la velocidad.
+-- La estela estuvo pintada encima con puntos sueltos y contaba una mentira: la
+-- espuma se SUMABA al oleaje en vez de romperlo, asi que el mar seguia picado
+-- por debajo del barco y la V se veia pegada por encima, como una calcomania.
+-- Dentro del campo, en cambio, el casco quita mar: eso es lo que se lee como
+-- que el barco rompe el agua.
 --
--- La apertura se mide con state.distance y no con el tiempo a proposito: es la
--- misma cuenta que hace el agua, y sale bien aunque la velocidad cambie a
--- mitad de estela.
+-- Lo que si se guarda por punto es cuanto llevaba andado el barco al soltarlo
+-- (`d`), porque la apertura de la V se mide con `state.distance` y no con el
+-- tiempo: es la misma cuenta que hace el agua, y sale bien aunque la velocidad
+-- cambie a mitad de estela.
 
 local wake, spray = {}, {}
-local WAKE_MAX  = 80
+local WAKE_MAX  = 48
 local SPRAY_MAX = 48
 local SEED_STEP = 4      -- un punto de estela cada tantos pixeles de mundo
-local SPREAD    = 0.32   -- tangente del semiangulo de la V
-local ARM_MAX   = 30     -- hasta donde se abren los brazos, en pixeles
+
+-- Cuanto dura la estela, en PIXELES ANDADOS. Es la misma leccion que la de la
+-- V, aplicada a lo que faltaba: medida en segundos, un barco lento dejaba un
+-- rabito de treinta pixeles que se apagaba antes de llegar al borde de la
+-- pantalla, asi que con viento flojo o en mitad de una virada -- justo cuando
+-- el barco pierde andar -- la estela no se veia. Medida en lo andado, la
+-- estela mide siempre lo mismo por muy despacio que se vaya: lo que cambia es
+-- lo que tarda en dejarla atras, que es lo que de verdad pasa en el agua.
+local WAKE_RUN  = 110
+-- Y un tope en segundos, que es el respaldo del barco PARADO: sin el, un barco
+-- quieto conservaria su estela para siempre. Va holgado a proposito, porque en
+-- cuanto el barco anda es lo andado quien manda; apretarlo volvia a acortar la
+-- estela de los barcos lentos, que es el fallo que se queria quitar. Aun asi,
+-- por debajo de unos cuatro pixeles por segundo la estela sale mas corta: un
+-- barco que se arrastra deja menos rastro, y eso es verdad tambien en el agua.
+local WAKE_LIFE = 30
 -- La estela nace DETRAS del espejo de popa y la salpicadura DELANTE de la
 -- roda, y los dos numeros son media eslora larga por una razon que costo
 -- verse: sembrados mas cerca del centro quedan debajo del casco, que mide 82
@@ -229,12 +196,13 @@ local lastX, lastY, lastDist
 local sprayAcc, sprayN = 0, 0
 
 function Sea.reset()
+    Surface.reset()
     wake, spray = {}, {}
     lastX, lastY, lastDist = nil, nil, nil
     sprayAcc, sprayN = 0, 0
 end
 
-local function shedWake(state, frac)
+local function shedWake(state)
     local fx, fy = Util.headingToVector(state.heading)
     local sx = state.x - fx * STERN
     local sy = state.y - fy * STERN
@@ -242,19 +210,11 @@ local function shedWake(state, frac)
     lastX, lastY = sx, sy
     table.insert(wake, 1, {
         x = sx, y = sy,
-        -- Estribor del barco EN EL MOMENTO de soltarlo: es lo que hace que los
-        -- brazos se abran sobre la derrota vieja y no sobre el rumbo de ahora.
-        nx = math.cos(state.heading), ny = math.sin(state.heading),
+        -- Lo que el barco llevaba andado al soltarlo. La resta contra el andar
+        -- de ahora es lo que abre la V, y por eso la abre lo que se CORRE y no
+        -- lo que se tarda.
         d = state.distance,
         age = 0,
-        -- Un barco lento deja un remolino corto; uno lanzado, uno largo. El
-        -- numero se midio en pantalla y no en el reloj: la estela tiene que
-        -- durar lo bastante para verse VARIAS ESLORAS por popa, o a media
-        -- singladura no asoma del espejo y el barco parece estar parado.
-        life = 3.5 + 6.5 * frac,
-        -- Los brazos van uno de cada dos: la V son crestas sueltas, no una
-        -- linea, y con todos puestos parecia un embudo pintado.
-        arm = (frac > 0.35) and (#wake % 2 == 0) or false,
     })
     while #wake > WAKE_MAX do table.remove(wake) end
 end
@@ -275,9 +235,15 @@ local function shedSpray(state, dt, frac, sea)
     while sprayAcc >= 1 do
         sprayAcc = sprayAcc - 1
         sprayN = sprayN + 1
-        local r1 = Util.hash01(sprayN, math.floor(state.time * 13), 41)
-        local r2 = Util.hash01(sprayN, math.floor(state.time * 13), 42)
-        local r3 = Util.hash01(sprayN, math.floor(state.time * 13), 43)
+        -- Tres numeros DISTINTOS de la misma gota, y por eso `hashGrid` y no
+        -- `hash01`: a esta ultima el tercer argumento se le anula, asi que los
+        -- tres salian el mismo numero y la gota tenia atados el costado, el
+        -- tamano y la separacion del casco. Se veia sin saber que se estaba
+        -- viendo: todas las gotas grandes por el mismo lado.
+        local t = math.floor(state.time * 13)
+        local r1 = Util.hashGrid(sprayN, t, 41)
+        local r2 = Util.hashGrid(sprayN, t, 42)
+        local r3 = Util.hashGrid(sprayN, t, 43)
         local side = (r1 < 0.68) and lee or -lee
         -- Nace YA fuera del casco, no en la crujia: la roda no tiene manga y
         -- una gota sembrada en el eje pasa la mitad de su vida escondida
@@ -308,12 +274,17 @@ function Sea.update(state, dt)
     if lastDist and state.distance - lastDist > 200 then Sea.reset() end
     lastDist = state.distance
 
-    -- La estela se siembra con mucho menos andar que el bigote: un barco que
-    -- apenas se mueve NO levanta agua por la proa, pero si deja un rastro
-    -- detras, y sin el se ve quieto en un mar que desfila.
+    -- La superficie no guarda olas, pero si de donde las esta mirando: hay que
+    -- arrastrarle el origen con lo que anda el barco y lo que desfila el agua.
+    Surface.update(state, dt, Sea.state(state))
+
+    -- La derrota se siembra con mucho menos andar del que hace falta para
+    -- levantar espuma: un barco que apenas se mueve NO rompe agua por la proa,
+    -- pero si deja un rastro detras, y sin el se ve quieto en un mar que
+    -- desfila.
     local frac = speedFraction(state)
-    if frac > 0.12 then
-        shedWake(state, frac)
+    if frac > 0.05 then
+        shedWake(state)
         shedSpray(state, dt, frac, Sea.state(state))
     end
 
@@ -321,7 +292,9 @@ function Sea.update(state, dt)
     for i = #wake, 1, -1 do
         local p = wake[i]
         p.age = p.age + dt
-        if p.age > p.life then table.remove(wake, i) end
+        if p.age > WAKE_LIFE or state.distance - p.d > WAKE_RUN then
+            table.remove(wake, i)
+        end
     end
     for i = #spray, 1, -1 do
         local q = spray[i]
@@ -346,141 +319,15 @@ local function foamColor(k)
     return Palette.shallow
 end
 
--- Manchas de agua honda. Van debajo de todo y se mueven con el mundo, no con
--- el viento: es el fondo lo que cambia, no la superficie. Solo salen donde el
--- mar esta LISO, que es cuando de verdad se ve el color del fondo; donde
--- rompe, la espuma lo tapa.
-local function drawCalm(state)
-    local cell = Sea.CALM_CELL
-    forEachCell(state.x, state.y, cell, 40, function(cx, cy)
-        local roll = Util.hash01(cx, cy, 31)
-        if roll > 0.42 then return end
-        local wx = (cx + Util.hash01(cx, cy, 32)) * cell
-        local wy = (cy + Util.hash01(cx, cy, 33)) * cell
-        if noise(wx / Sea.SWELL_CELL, wy / Sea.SWELL_CELL, 9) > 0.52 then return end
-        local x, y = Sea.project(state, wx, wy)
-        if onScreen(x, y, 40) then
-            Art.drawCentered(roll < 0.20 and "sea.calm" or "sea.calmet", x, y)
-        end
-    end)
-end
-
-local function drawWaves(state)
-    local sea = Sea.state(state)
-    local tx, ty = windVector(state)
-    -- Las crestas se peinan CONTRA el viento: la cresta cruza la direccion en
-    -- la que corre la ola, que es la del viento. De ahi el cuarto de vuelta.
-    local crest = Sea.screenAngle(state, tx, ty) + math.pi / 2
-
-    -- El campo entero desfila a sotavento. No se recicla con un modulo -- eso
-    -- da un tiron cada vuelta --: lo que se desplaza es el punto ALREDEDOR del
-    -- cual se barren las celdas, asi que el mar avanza sin costura.
-    local drift = state.time * (5 + 26 * sea)
-    local ox, oy = tx * drift, ty * drift
-    local cell = Sea.WAVE_CELL
-    local t = state.time
-
-    forEachCell(state.x - ox, state.y - oy, cell, 0, function(cx, cy)
-        local wx = (cx + Util.hash01(cx, cy, 1)) * cell
-        local wy = (cy + Util.hash01(cx, cy, 2)) * cell
-
-        -- Mancha: un trozo de mar picado y el de al lado casi liso. Es la
-        -- diferencia entre un oleaje y un papel pintado de olas.
-        local rough = noise(wx / Sea.SWELL_CELL, wy / Sea.SWELL_CELL, 9)
-        local density = 0.36 + 0.48 * sea * (0.30 + 0.70 * rough)
-        if Util.hash01(cx, cy, 3) >= density then return end
-
-        -- Que ola es, y la mezcla importa mas que cada una: la mayoria tienen
-        -- que ser rizos -- trazo corto, color de agua, casi sin contraste --
-        -- y solo unas pocas romper en blanco. Con la mayoria en espuma clara
-        -- el mar se llena de marcas iguales y brillantes, y un campo de marcas
-        -- iguales y brillantes no se lee como agua: se lee como lluvia.
-        --
-        -- El exponente concentra las olas hechas en las manchas picadas en vez
-        -- de repartirlas: es lo que hace que se navegue de un trozo de mar a
-        -- otro y no por un mar medio en todas partes.
-        local grade = sea * (0.10 + 0.90 * rough) ^ 1.6
-                          * (0.30 + 0.70 * Util.hash01(cx, cy, 4))
-        local id = (grade > 0.50 and "sea.swell")
-                or (grade > 0.24 and "sea.wave")
-                or "sea.ripple"
-
-        -- Tren de olas: la fase corre a lo largo del viento, asi que las
-        -- crestas de una misma linea suben y bajan juntas y las de detras van
-        -- un poco despues. Con una fase suelta por ola el mar hierve; con
-        -- esta, respira.
-        local along = wx * tx + wy * ty
-        local surge = math.sin(along * 0.075 - t * (0.9 + 1.1 * sea)) * (0.5 + 2.2 * sea)
-
-        local x, y = Sea.project(state,
-                                 wx + ox + tx * surge,
-                                 wy + oy + ty * surge)
-        if not onScreen(x, y, 22) then return end
-
-        -- Cada cresta se tuerce un poco de su cuenta. Un mar de trazos
-        -- exactamente paralelos es un peine, no un mar: la mar corta de verdad
-        -- va desordenada. Un paso de sprite arriba o abajo basta, y mas ya
-        -- borra de donde sopla.
-        local skew = (Util.hash01(cx, cy, 8) - 0.5) * 0.46
-        local sprite = Sea.orient(id, crest + skew)
-
-        -- Una cresta es larga y se rompe a trozos, asi que la ola corriente se
-        -- pinta a veces DOS veces seguidas a lo largo de si misma: con hueco
-        -- entre tramo y tramo, y escalonadas un pixel a un lado. Con hueco y
-        -- escalon es una cresta rota; pegadas y en linea salia una raya larga,
-        -- y una pantalla de rayas largas y finas no es un mar, es lluvia.
-        --
-        -- Se dobla SOLO la ola corriente, que es la oscura. El rizo es el grano
-        -- del agua y encadenado vuelve a ser una raya; y la rompiente lleva
-        -- blanco, asi que encadenada pinta una linea de puntos brillantes --
-        -- que es, otra vez, exactamente lluvia. Lo blanco va siempre suelto.
-        local ang = crest + skew
-        local n = (id == "sea.wave" and Util.hash01(cx, cy, 10) > 0.45) and 2 or 1
-        if n == 1 then
-            enqueue(sprite, x, y)
-        else
-            local sw = Art.size(sprite)
-            local ux, uy = math.cos(ang), math.sin(ang)
-            local gap = sw + 1
-            for i = 0, 1 do
-                local k = i - 0.5
-                local step = (Util.hash01(cx, cy, 40 + i) > 0.5) and 1 or -1
-                enqueue(sprite, x + ux * gap * k - uy * step,
-                                y + uy * gap * k + ux * step)
-            end
-        end
-    end)
-end
-
-local function drawGusts(state)
-    local sea = Sea.state(state)
-    local tx, ty = windVector(state)
-    -- Al reves que las crestas: la racha corre A FAVOR del viento, asi que en
-    -- pantalla cruza las olas en angulo recto. Es lo que ensena de donde sopla.
-    local streak = Sea.screenAngle(state, tx, ty)
-    local drift = state.time * (26 + 70 * sea)
-    local ox, oy = tx * drift, ty * drift
-    local cell = Sea.GUST_CELL
-
-    forEachCell(state.x - ox, state.y - oy, cell, 0, function(cx, cy)
-        -- En calma no hay rachas que ver; con viento fresco, muchas.
-        if Util.hash01(cx, cy, 5) <= 0.94 - 0.10 * sea then return end
-        local wx = (cx + Util.hash01(cx, cy, 6)) * cell + ox
-        local wy = (cy + Util.hash01(cx, cy, 7)) * cell + oy
-        local x, y = Sea.project(state, wx, wy)
-        if onScreen(x, y, 12) then
-            enqueue(Sea.orient("sea.gust", streak), x, y)
-        end
-    end)
-end
-
 local function drawScenery(state)
     local cell = Sea.SCENERY_CELL
     forEachCell(state.x, state.y, cell, 40, function(cx, cy)
         local roll = Util.hash01(state.seed + cx, cy, 21)
         if roll <= 0.72 then return end
-        local wx = (cx + Util.hash01(cx, cy, 22)) * cell
-        local wy = (cy + Util.hash01(cx, cy, 23)) * cell
+        -- Lo mismo aqui: con `hash01` los dos desplazamientos salian iguales
+        -- y todas las islas caian clavadas en la diagonal de su casilla.
+        local wx = (cx + Util.hashGrid(cx, cy, 22)) * cell
+        local wy = (cy + Util.hashGrid(cx, cy, 23)) * cell
         local x, y = Sea.project(state, wx, wy)
         if onScreen(x, y, 40) then
             Art.drawCentered(roll > 0.88 and "sea.island" or "sea.rock", x, y)
@@ -497,32 +344,51 @@ local function drawPorts(state)
     end
 end
 
-local function drawWake(state)
-    for _, p in ipairs(wake) do
-        local k = p.age / p.life
-        love.graphics.setColor(foamColor(k))
+-- La derrota, tal y como la quiere el shader: en pixeles de arte, del barco
+-- hacia atras, y con la eslora y la manga del casco con las que se dibuja.
+--
+-- Los dos primeros puntos SON el barco -- roda y espejo --, y van en
+-- coordenadas de pantalla porque el barco esta siempre en el mismo pixel con
+-- la proa arriba. Es lo que cierra la calle en punta por delante: la roda
+-- cuenta como derrota "negativa" (`run = -eslora`), asi que la manga que
+-- reparte el shader vale cero justo ahi y va abriendose a lo largo del casco
+-- hasta la manga entera, que es la que deja por detras.
+--
+-- La derrota se REMUESTREA: en el shader caben veinticuatro puntos y en la
+-- lista hay hasta ochenta, pero la distancia a un segmento es exacta por muy
+-- separados que esten sus extremos, asi que se coge uno de cada tantos y la
+-- estela no pierde ni un pixel de largo.
+local function wakeTrack(state)
+    local cx, cy = Constants.shipAnchor()
+    local hullW, hullH = Art.size("ship.hull")
+    local len  = Art.HULL_BOX.h * hullH
+    local beam = Art.HULL_BOX.w * hullW / 2
 
+    local track = {
+        { x = cx, y = cy - len / 2, run = -len, left = 1 },
+        { x = cx, y = cy + len / 2, run = 0,    left = 1 },
+    }
+
+    local room = Surface.TRACK - #track
+    local stride = math.max(1, math.ceil(#wake / room))
+    for i = 1, #wake, stride do
+        local p = wake[i]
         local x, y = Sea.project(state, p.x, p.y)
-        if onScreen(x, y, 8) then Art.drawCentered("sea.foam", x, y) end
-
-        -- Los brazos se abren a lo que el barco ha andado DESDE que se solto
-        -- este punto, que es lo que hace la V de verdad: fija en angulo,
-        -- larga o corta segun lo que corras.
-        if p.arm then
-            local open = math.min((state.distance - p.d) * SPREAD, ARM_MAX)
-            if open > 2 then
-                for _, s in ipairs({ -1, 1 }) do
-                    local ax, ay = Sea.project(state,
-                                               p.x + p.nx * open * s,
-                                               p.y + p.ny * open * s)
-                    if onScreen(ax, ay, 8) then
-                        Art.drawCentered("sea.drop", ax, ay)
-                    end
-                end
-            end
-        end
+        local run = state.distance - p.d
+        track[#track + 1] = {
+            x = x, y = y,
+            run  = run,
+            -- Se apaga por lo andado, y el reloj es solo el tope del barco
+            -- parado. La raiz deja la estela con cuerpo casi hasta el final en
+            -- vez de irse apagando desde el primer pixel.
+            left = math.sqrt(Util.clamp(math.min(1 - run / WAKE_RUN,
+                                                 1 - p.age / WAKE_LIFE), 0, 1)),
+        }
+        if #track >= Surface.TRACK then break end
     end
-    love.graphics.setColor(1, 1, 1, 1)
+
+    return { track = track, beam = beam, hull = len,
+             bow = bowFraction(state), wash = washFraction(state) }
 end
 
 local function drawSpray(state)
@@ -534,26 +400,6 @@ local function drawSpray(state)
         end
     end
     love.graphics.setColor(1, 1, 1, 1)
-end
-
--- Bigote de proa. Va pegado a la pantalla y no al mundo -- la roda esta
--- siempre en el mismo pixel --, asi que no elige orientacion: la proa apunta
--- arriba por definicion. Los tres tamanos son la lectura de velocidad que la
--- estela sola no da: la estela cuenta de donde vienes, el bigote cuanto
--- corres AHORA.
-local function drawBowWave(state)
-    local frac = speedFraction(state)
-    if frac < WORKING then return end
-    local cx, cy = Constants.shipAnchor()
-    local _, hullH = Art.size("ship.hull")
-    local stem = cy - Art.HULL_BOX.h * hullH / 2
-    local id = (frac > 0.70 and "sea.bow3")
-            or (frac > 0.45 and "sea.bow2")
-            or "sea.bow1"
-    -- Cabeceo: la roda sube y baja, y con ella el bigote. Un pixel de arte son
-    -- cinco de pantalla, asi que con esto basta y sobra.
-    local heave = math.floor(math.sin(state.time * 2.4) * (0.6 + frac))
-    Art.drawCentered(id, cx, stem + 3 + heave)
 end
 
 -- Marca de rumbo: una fila de puntos hacia la proa. Como el barco no gira en
@@ -575,19 +421,10 @@ local function drawHeadingGuide(state)
 end
 
 function Sea.draw(state)
-    love.graphics.setColor(Palette.sea)
-    love.graphics.rectangle("fill", 0, 0, Constants.ART_W, Constants.ART_H)
-    love.graphics.setColor(1, 1, 1, 1)
-
-    drawCalm(state)
-    drawWaves(state)
-    drawGusts(state)
-    flushStrokes()
+    Surface.draw(state, Sea.state(state), wakeTrack(state))
     drawScenery(state)
     drawPorts(state)
-    drawWake(state)
     drawSpray(state)
-    drawBowWave(state)
     drawHeadingGuide(state)
 end
 

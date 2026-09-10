@@ -65,39 +65,23 @@ y no pasa nada mas. El arranque las lista en consola con `falta ->`.
 
 ## Sprites
 
-### Las cuatro familias del oleaje
+### El oleaje ya no es un sprite
 
-Las crestas del mar tienen orientacion -- se peinan contra el viento -- y el
-juego no gira nada al dibujar, asi que cada trazo esta pintado **doce veces**,
-una cada quince grados, y `src/sea.lua` elige la que toca. Son cuatro familias
-de doce, con el numero de orientacion al final del nombre:
+Lo fue: cuatro familias de doce trazos cada una -- rizo, ola, rompiente y racha
+--, pintadas una cada quince grados porque el juego no gira nada al dibujar. La
+superficie la calcula hoy un shader por pixel (`src/surface.lua`), asi que esos
+cuarenta y ocho PNG **ya no existen** y no hay nada que dibujar ahi. Lo que
+sigue siendo sprite del mar es la gota de las salpicaduras, las islas, los
+escollos y los puertos. La estela tampoco es un sprite: el casco abre una calle
+DENTRO del campo de espuma (ver `src/surface.lua`), no la pinta encima.
 
-| familia | tamano | archivos | que es |
-|---------|--------|----------|--------|
-| `sea.ripple1..12` | 5x5 | `assets/sea_ripple_1.png` … `_12.png` | el grano del agua |
-| `sea.wave1..12` | 8x8 | `assets/sea_wave_1.png` … `_12.png` | la ola corriente, sin espuma |
-| `sea.swell1..12` | 10x10 | `assets/sea_swell_1.png` … `_12.png` | la que rompe, con cabeza blanca |
-| `sea.gust1..12` | 11x11 | `assets/sea_gust_1.png` … `_12.png` | la racha, que corre a favor del viento |
-
-El numero **1 es horizontal** y van girando en sentido horario en pantalla:
-`_1` es 0 grados, `_4` son 45, `_7` son 90 (vertical), `_10` son 135. Como un
-trazo no tiene punta, doce cubren la vuelta entera.
-
-Si dibujas los tuyos, dibuja **los doce**: falta uno y el juego peta al pedirlo,
-que es a proposito (una errata en un id tiene que verse). Y no hace falta que
-midan lo que dice la tabla, pero si que midan **todos lo mismo**: el trazo se
-centra en su lienzo.
-
+Si algun dia vuelve a hacer falta algo del mundo CON orientacion -- un barco
+enemigo, pongamos --, la salida sigue siendo la de siempre: un sprite por
+rumbo, nunca una rotacion en el dibujo.
 
 | id | tamano | archivo |
 |----|--------|---------|
-| `sea.foam` | 3x3 | `assets/sea_foam.png` |
 | `sea.drop` | 2x2 | `assets/sea_drop.png` |
-| `sea.calm` | 56x44 | `assets/sea_calm.png` |
-| `sea.calmet` | 38x30 | `assets/sea_calmet.png` |
-| `sea.bow1` | 9x3 | `assets/sea_bow1.png` |
-| `sea.bow2` | 13x4 | `assets/sea_bow2.png` |
-| `sea.bow3` | 17x5 | `assets/sea_bow3.png` |
 | `sea.island` | 40x32 | `assets/sea_island.png` |
 | `sea.rock` | 10x8 | `assets/sea_rock.png` |
 | `sea.port` | 32x26 | `assets/sea_port.png` |
@@ -124,19 +108,9 @@ centra en su lienzo.
   del casco para poder cambiar entre trapo largo y rizos sin repintar el barco.
   Al arrizar se recoge el trapo, no se acorta la verga: en las dos versiones el
   palo y la verga caen en el mismo sitio, o tomar rizos parece cambiar de barco.
-* `sea.ripple*`, `sea.wave*`, `sea.swell*` — el oleaje, doce orientaciones cada
-  uno. Salen cientos por pantalla: cuanto mas simples, mejor. La mezcla importa
-  mas que cada trazo — el rizo y la ola son **oscuros y de poco contraste**, y
-  solo la rompiente lleva blanco. Si les subes el brillo a todos, la pantalla se
-  llena de marcas claras iguales y el mar deja de parecer agua: parece lluvia.
-* `sea.gust*` — racha de viento. Corre **a favor** del viento, o sea cruzada a
-  las crestas, y es lo que ensena de donde sopla.
-* `sea.foam` — el remolino de la estela. `sea.drop` — una gota: brazos de la
-  estela y salpicadura de proa.
-* `sea.bow1/2/3` — el bigote de la roda, en tres tamanos segun lo que se corra.
-  Este **no** gira: va pegado a la pantalla, y la proa apunta siempre arriba.
-* `sea.calm`, `sea.calmet` — manchas de agua honda, tramadas. Son la variacion
-  grande del fondo; macizas se leen como agujeros.
+* `sea.drop` — una gota de salpicadura, y el unico sprite que le queda al mar.
+  Sobrevive porque una salpicadura esta **en el aire**, no en el agua: el surco,
+  el hervor de popa y la V de la roda los calcula el shader dentro del agua.
 * `sea.island`, `sea.rock`, `sea.port` — se dibujan **sin girar** desde
   cualquier rumbo, asi que evita formas con una direccion clara.
 * `crew.pjNN` — la **reserva de caras**: tripulantes en cenital, catorce, y ni

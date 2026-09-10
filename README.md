@@ -21,11 +21,9 @@ faltan dos por dibujar (la bodega y el trapo arrizado).
 ```sh
 love .                        # desde la raiz del proyecto
 lua5.1 tests/test_sim.lua     # prueba de la simulacion, sin ventana
+lua5.1 tests/test_deck.lua    # el paseo de la tripulacion por cubierta
 lua5.1 tests/test_halyard.lua # la driza: fisica y geometria
-lua5.1 tests/test_sea.lua     # el mar: orientacion, calma y estela
-love .                       # desde la raiz del proyecto
-lua5.1 tests/test_sim.lua    # prueba de la simulacion, sin ventana
-lua5.1 tests/test_deck.lua   # el paseo de la tripulacion por cubierta
+lua5.1 tests/test_sea.lua     # el mar: como se peina, la calma y la estela
 ```
 
 Teclas: `F11` / `alt+enter` pantalla completa, `esc` cierra la hoja abierta,
@@ -66,14 +64,21 @@ fanal; se leen igual desde cualquier demora y por eso les basta un sprite. Si
 algun dia hay otro barco en el mar, o se dibuja en varios rumbos, o rompe la
 regla.
 
-Las **crestas del mar** son el caso que si tiene orientacion, y se resuelve por
-la primera salida: un sprite por angulo. El oleaje se peina contra el viento,
-asi que va en diagonal cuando el viento va en diagonal, y cada trazo esta
-generado **doce veces**, uno cada quince grados; `src/sea.lua` mira a que angulo
-cae el viento en pantalla y pide el que toca (`Sea.orient`). Doce y no ocho
-porque con ocho, a este tamano de pixel, se ve saltar el mar entero al virar.
-Cuesta treinta y seis sprites de nada y no cuesta ni un fotograma: son sprites
-ya hechos, no lineas trazadas en vivo.
+El **oleaje** es el caso que si tiene orientacion -- se peina contra el viento,
+asi que va en diagonal cuando el viento va en diagonal --, y hay una tercera
+salida que no rompe la regla porque no hay sprite que romper: **calcularlo por
+pixel**. La superficie es hoy un shader (`src/surface.lua`) que muestrea un
+campo de espuma en coordenadas del mundo, giradas por el mismo rumbo que
+`Sea.project`. Un shader no muestrea una rejilla de pixeles: la evalua, asi que
+puede peinar el mar en cualquier direccion sin deshacerlo. Y como se pinta en un
+lienzo a escala de ARTE, cada invocacion **es** un pixel del juego, con lo que
+la rejilla sale cuadrada sola.
+
+Antes de eso el oleaje iba por la primera salida, y funcionaba: cada trazo
+generado doce veces, uno cada quince grados, elegido por el angulo en pantalla.
+Costaba cuarenta y ocho sprites y doscientas llamadas de dibujo por fotograma;
+el shader cuesta una. Sigue siendo la salida buena para cualquier cosa del mundo
+que sea un DIBUJO y no una textura -- un barco enemigo, por ejemplo.
 
 Las excepciones que van por la OTRA salida son cinco —la rosa del timon
 (`src/compass.lua`), la rueda del timon (`src/helm.lua`), la driza del velamen
@@ -102,11 +107,14 @@ HUD, asi que x5 es el techo. Cuesta mar: el area de arte pasa de 135x240 a
 velocidad de singladura. Si algun dia hace falta un barco mas grande sin
 recortar mar, el camino no es este numero sino redibujar los PNG mas grandes.
 
-**3. Nada del mar se guarda.** Olas, rachas, islas, escollos, puertos, precios y
-la gente de las tabernas son funcion pura de la posicion, la semilla y el
-tiempo, via `Util.hash01`. La estela y las salpicaduras tampoco: son adorno, y
-al volver a la partida el barco aparece con el mar limpio detras. El mar es
-infinito y la partida guardada ocupa un kilobyte.
+**3. Nada del mar se guarda.** Islas, escollos, puertos, precios y la gente de
+las tabernas son funcion pura de la posicion, la semilla y el tiempo, via
+`Util.hash01`. La estela y las salpicaduras tampoco: son adorno, y al volver a
+la partida el barco aparece con el mar limpio detras. La superficie guarda una
+sola cosa entre fotograma y fotograma -- el punto del campo de espuma que le
+toca mirar, que se arrastra con lo que anda el barco (`Surface.update`) --, y
+tampoco va al fichero: al cargar arranca de cero y no se nota, porque es ruido.
+El mar es infinito y la partida guardada ocupa un kilobyte.
 
 ---
 
@@ -154,7 +162,8 @@ rumbo/
 │   ├── stations.lua      # los seis puestos de cubierta
 │   ├── crew.lua          # tripulantes: pericia, soldada y cara
 │   ├── ports.lua         # puertos, precios, tabernas
-│   ├── sea.lua           # camara y dibujo del mar
+│   ├── sea.lua           # camara, estela, bigote, islas y puertos
+│   ├── surface.lua       # la superficie del agua: el shader del oleaje
 │   ├── deck.lua          # donde anda la tripulacion por cubierta (solo dibujo)
 │   ├── compass.lua       # la rosa del timon, centrada en la cabecera
 │   ├── helm.lua          # la rueda del timon: un cuarto en la esquina de estribor
@@ -169,10 +178,9 @@ rumbo/
 │       └── chart.lua     # carta de marear: rumbo a un puerto descubierto
 └── tests/
     ├── test_sim.lua      # prueba headless de la simulacion
-    ├── test_halyard.lua  # prueba de la driza (fisica y geometria, con love de mentira)
-    └── test_sea.lua      # prueba del mar (orientacion y estela, con love de mentira)
     ├── test_deck.lua     # prueba del paseo por cubierta (geometria, sin ventana)
-    └── test_halyard.lua  # prueba de la driza (fisica y geometria, con love de mentira)
+    ├── test_halyard.lua  # prueba de la driza (fisica y geometria, con love de mentira)
+    └── test_sea.lua      # prueba del mar (uniformes del shader y estela, con love de mentira)
 ```
 
 **El corte importante es simulacion / dibujo.** `world.lua`, `ship.lua`,
@@ -618,57 +626,159 @@ verdad; es lo que convierte "elegir rumbo" en una decision y no en un adorno.
 ### El mar lo cuenta todo
 
 El viento no tiene barra. Se lee **en el agua**, y esa es la mitad del trabajo
-del mar de `src/sea.lua`.
+de la superficie (`src/surface.lua`).
 
-Las **crestas se peinan contra el viento** y las **rachas corren a favor**, asi
-que las dos familias salen siempre a noventa grados una de otra: mires donde
-mires, el mar dice de donde sopla, y al virar se repeina entero porque lo que
-gira es el mundo. Y como el mar entero desfila a sotavento, tambien dice **hacia
-donde** va. El desfile no se recicla con un modulo —eso daba un tiron cada
-vuelta, que es lo que hacia el mar viejo con las rachas— sino corriendo el punto
-alrededor del cual se barren las celdas: asi el campo avanza sin costura.
+El agua es un **voronoi de espuma**: dos capas de celdas y la espuma justo en la
+FRONTERA entre celda y celda, que es donde rompe el agua de verdad. El shader
+es el de Shadertoy, con cuatro cosas cambiadas para que sea este mar: sin
+perspectiva (aqui no hay horizonte), atado a la camara, con direccion, y con la
+paleta cerrada.
+
+La direccion es la parte que cuenta el viento. El campo se mide en dos ejes --
+uno **a lo largo** del viento y otro **cruzado** --, y el cruzado mide mas mundo
+por celda: las celdas salen estiradas a traves del viento, asi que sus fronteras
+-- las vetas de espuma -- caen cruzadas al viento, que es como se peina el mar.
+Mires donde mires, el mar dice de donde sopla, y al virar se repeina entero
+porque los dos ejes se calculan en pantalla y la pantalla gira con el barco. Y
+como el campo entero desfila a sotavento, tambien dice **hacia donde** va.
 
 La **fuerza** decide el resto. El viento sopla entre 0,55 y 1,0, que como fuerza
 de mar es un rango corto, asi que se estira a [0, 1] (`Sea.state`) para que la
-calma sea calma de verdad. Con poco viento quedan cuatro rizos sueltos, ninguno
-blanco y ni una racha en la pantalla; con viento fresco el mar se llena, el
-oleaje crece y aparecen las rompientes. Un ruido de manchas por encima
-(`SWELL_CELL`) hace que un trozo de mar este picado y el de al lado casi liso,
-que es lo que separa un oleaje de un papel pintado de olas — y las manchas de
-agua honda, tramadas y sin espuma encima, son la variacion grande, la que se ve
-venir desde lejos.
+calma sea calma de verdad. Con poco viento el estiron baja -- las vetas se
+vuelven rizos redondos --, la espuma casi no sale y el agua **no puede** romper
+en blanco: el escalon del blanco se manda por encima de uno, que es mas de lo
+que la cuenta de espuma del oleaje puede dar en ningun pixel, asi que no es que
+salgan pocas rompientes, es que no cabe ninguna. (La estela si rompe en calma,
+y a proposito: se salta ese techo porque una estela es blanca haga el tiempo
+que haga.) Con viento fresco el estiron sube, las
+vetas se alargan, el dorso de cada ola se oscurece y aparecen las cabezas
+blancas. Un ruido de manchas por encima hace que un trozo de mar este picado y
+el de al lado casi liso, que es lo que separa un oleaje de un papel pintado.
 
-Todo esto costo una leccion que merece quedar escrita: **un mar de marcas claras
-iguales se lee como lluvia**, no como agua. La primera version tenia razon en
-todo —crestas orientadas, olas en diagonal, calma con poco viento— y con el
-viento por el traves, que es cuando las crestas caen verticales en pantalla,
-parecia un chaparron. Lo que lo arregla es la mezcla: el rizo y la ola corriente
-son **oscuros**, casi sin contraste, y tienen grosor (dos filas de cresta y una
-de seno) en vez de ser una raya de un pixel; el blanco es solo de las
-rompientes, y va suelto, nunca encadenado. Las olas corrientes si se encadenan,
-con hueco y escalonadas, porque una cresta es larga y se rompe a trozos.
+Todo esto arrastra una leccion de la version de trazos que sigue mandando en los
+numeros: **un mar de marcas claras iguales se lee como lluvia**, no como agua.
+Por eso la cuenta acaba en cinco escalones de paleta y no en un degradado, y por
+eso el reparto esta medido: dos tercios largos de agua a secas, un quinto de
+bajio, un dos por ciento de espuma y dos pixeles de cada mil en blanco. Subir el
+brillo del monton es lo que convirtio la primera version en un chaparron.
+
+Dos cosas del shader no se ven pero sin ellas no hay mar. La primera: el campo
+es **periodico**, porque a las pocas horas de singladura las coordenadas del
+mundo son tan grandes que `fract()` se queda sin decimales y el mar hierve. La
+segunda: el origen del campo **se arrastra** en vez de calcularse desde
+`state.x`, porque el eje del campo gira con el viento y proyectar una posicion
+enorme sobre un eje que rola hace que el mar salga disparado de lado en cuanto
+el viento rola un grado.
+
+### En el mar no puede haber un numero grande
+
+Esta seccion existe por un fallo que en escritorio no se ve nunca. El mar se
+veia en el PC y en el movil no: azul liso de arriba abajo, sin una veta de
+espuma, y encima la estela del barco tan visible como siempre.
+
+La estela es la pista. Es geometria de pantalla -- la distancia de un pixel a
+una polilinea, numeros de dos cifras y sin `fract()` de por medio --, asi que
+sobrevive donde el oleaje se muere. Y lo que mata al oleaje es el **tamano de
+los numeros**: un `float` de escritorio tiene veinticuatro bits de mantisa y le
+da igual todo, pero la precision de un fragmento de movil puede ser de dieciseis
+bits, o de once. A once bits, `fract()` de un numero de dos cifras deja un
+punado de valores distintos, y de un voronoi con un punado de valores distintos
+no sale espuma: sale un color plano.
+
+Medido, simulando la precision corta sobre el mismo fotograma: con el hash
+calculado a mano, un fragmento de once bits deja el **99,7 %** de la pantalla en
+azul y cero pixeles de espuma. Con el grano leido de una textura, el mismo
+fotograma a once bits sale **identico** al de veinticuatro. Esa es toda la
+diferencia.
+
+De ahi tres decisiones del shader:
+
+* **El grano se lee, no se calcula.** El hash aritmetico del shader original
+  lleva sus numeros intermedios al cincuenta largo, y ahi es donde pierde los
+  decimales. Una textura de ruido de 256x256 con cuatro numeros por celda -- los
+  dos del meneo de la semilla, el del corte que tira una de cada tres y el de
+  las manchas de mar liso -- vale lo que vale en cualquier maquina. De paso son
+  treinta lecturas de una textura que cabe en la cache donde antes habia casi
+  sesenta hashes por pixel.
+* **Del origen solo viaja el decimal.** Las celdas enteras entran como
+  desplazamiento DENTRO de la textura, donde no cuestan precision, asi que la
+  coordenada que se parte con `floor`/`fract` no pasa de las cuarenta celdas que
+  caben en pantalla. La repeticion de la textura hace ademas el modulo del campo
+  sin que nadie lo calcule.
+* **Las fases llegan envueltas en una vuelta.** Se calculan en Lua, con dobles.
+  Un `sin()` de setecientos radianes -- que es lo que pedia la comba con la
+  coordenada absoluta -- es ruido en cuanto la maquina no es un PC.
+
+El grano **no sale de `Util.hash01`**, y esa es la unica excepcion a la regla de
+que toda la variacion sale de ahi. Por dos motivos, los dos visibles en
+pantalla: su tercer argumento no hace nada (entra multiplicado por 2147483647,
+que es justo el modulo, asi que se va a cero -- pedirle cuatro canales por ahi
+devuelve cuatro veces el mismo numero, las celdas se mueven todas en diagonal y
+el mar se convierte en una escalera), y ademas es casi **afin**, con una
+correlacion del ocho por ciento con el vecino de al lado; repartido por una
+textura eso no se lee como ruido, se lee como una rampa, con la espuma
+amontonada en una franja. Para el mundo da igual -- un puerto no tiene vecino al
+lado --, pero una textura de ruido es justo el caso que lo destapa. El grano se
+mezcla con un seno en `src/surface.lua`: sigue siendo funcion pura de la
+posicion, sin una semilla guardada, y medido a 256x256 da media 0,500,
+correlacion con el vecino 0,0004 y entre canales 0,008.
+
+Lo que **no** cambio fue el aspecto: al cambiar el grano se volvieron a ajustar
+los cuatro numeros de la espuma midiendo el reparto de los cinco colores, y el
+ajuste que mas se parecia al mar de antes era dejarlos donde estaban.
 
 ### La estela dice lo que hace el barco
 
-Detras del casco hay dos cosas y no una. El **remolino de popa** se queda donde
-se solto y se deshace; los **brazos de la V** se abren a un angulo fijo, pero
-proporcionalmente a lo que el barco **anda**, no a lo que tarda. La diferencia
-importa: un barco parado no abre V, uno lanzado la tiene larga, y en una virada
-se dobla sola porque cada punto de la estela guarda su propia derrota. Es la
-lectura que la version anterior no daba — una fila de puntos por la crujia se
-veia igual a dos nudos que a seis, y en una virada dejaba una raya recta que no
-era por donde se habia pasado.
+El barco no pasa por encima del mar: lo **rompe**. La estela no se pinta sobre
+el agua, se descuenta de ella. Lua le manda al shader la **derrota** -- los
+ultimos puntos por donde ha pasado el espejo de popa, ya proyectados a pixeles
+de pantalla, cada uno con lo que el barco ha andado desde entonces y lo que le
+queda de vida -- y el shader mide la distancia de cada pixel a esa polilinea.
+De ahi salen tres cosas:
 
-Delante, la roda: el **bigote de proa** en tres tamanos segun lo que se corra
-—la estela cuenta de donde vienes, el bigote cuanto corres ahora— y unas
-**salpicaduras** que salen a pulsos, no a chorro, y sobre todo por la banda de
-**sotavento**, que es hacia donde tumba el viento. Las dos cosas callan por
-debajo de un tercio de andar: un barco que apenas se mueve con espuma en la proa
-miente, y en el ojo del viento se pasa un buen rato asi.
+* **El surco.** Dentro de la calle que abre el casco, el campo de espuma se
+  aplasta: las crestas mueren y queda agua lisa que tarda en cerrarse. Es la
+  lectura que ninguna version anterior daba, porque estaba hecha de espuma
+  ANADIDA y esto es mar QUITADO.
+* **El hervor de popa**, lo mas macizo de todo el mar, que dura media eslora.
+* **Los brazos de la V**, que nacen en la **roda** -- la calle se cierra ahi en
+  punta siguiendo el costado del casco, y por eso la V acaba en pico justo
+  delante de la proa -- y se abren con lo que el barco ha **andado** desde cada
+  trozo de derrota, no con lo que ha tardado. En una virada la V se dobla sola
+  porque cada trozo lleva puesto su propio rumbo.
 
-El bigote es la unica cosa del mar que se dibuja pegada a la pantalla y no al
-mundo, y es legal por la misma razon que el barco: la proa apunta siempre
-arriba, asi que no tiene angulo que elegir.
+Por detras del espejo la calle mide la **manga entera del sprite**, leida de
+`Art.HULL_BOX`: si alguien redibuja el barco mas ancho, el surco se ensancha con
+el, y hay una prueba que lo comprueba.
+
+Tres decisiones, y dos de ellas son cicatrices de haberlo jugado.
+
+La primera se vio antes: los brazos van multiplicados por la veta del propio
+oleaje, para que salgan rotos a trozos; una linea limpia a este grano de pixel
+se lee como pintada encima.
+
+La segunda: la espuma de la estela **si** puede romper en blanco con el mar en
+calma, aunque el agua libre no pueda. Tiene su propio escalon de blanco, aparte
+del techo que el viento le pone al oleaje. Sumada al del mar, con viento flojo
+la estela salia de color de bajio y no se veia -- una estela es blanca haga el
+tiempo que haga.
+
+La tercera: la estela se apaga por lo **andado** (110 px) y no por el reloj, y
+lo que se mide por velocidad son **dos** numeros y no uno. Por delante del
+espejo manda la regla de siempre (por debajo de un tercio de andar la roda no
+rompe agua); por detras, una compuerta que se llena mucho antes, porque un
+barco deja rastro a cualquier velocidad a la que se mueva de verdad. Con las
+dos cosas atadas a la velocidad y medidas en segundos, la estela se borraba
+justo virando o con viento flojo -- que es cuando el barco pierde andar y
+cuando mas se agradece ver que sigue vivo.
+
+Delante ya no hay bigote de tres tamanos: la punta de la V es el bigote, y sale
+de la misma cuenta. Lo que si sigue siendo sprite son las **salpicaduras**, que
+salen a pulsos y sobre todo por la banda de **sotavento**: una gota esta en el
+aire, por encima del agua, y ahi un sprite dice la verdad y un campo calculado
+en la superficie no. Las dos cosas callan por debajo de un tercio de andar: un
+barco que apenas se mueve con espuma en la proa miente, y en el ojo del viento
+se pasa un buen rato asi.
 
 ### Puestos
 
@@ -880,12 +990,14 @@ Esto es andamiaje. Lo que esta pensado pero no hecho:
 * **Sonido** — no hay `audio_manager` todavia.
 * **Tiempo y averias** — el viento rola pero no hay temporales; el casco se
   desgasta a ritmo fijo. El gancho esta en `Ship.rates().wear`, y el mar ya
-  sabe ponerse feo: todo el oleaje cuelga de `Sea.state`, que hoy solo lee la
-  fuerza del viento.
+  sabe ponerse feo: toda la superficie cuelga de `Sea.state`, que hoy solo lee
+  la fuerza del viento.
 * **Encuentros en el mar** — no hay otros barcos. Cuando los haya, hay que
-  resolver la regla 1: la salida ya esta hecha y probada en el mar, que genera
-  doce orientaciones de cada trazo (`SEA_DIRS` en `src/art.lua`); un barco pide
-  lo mismo con mas pixeles.
+  resolver la regla 1, y para un barco la salida no es la del agua: un shader
+  vale para una textura, no para un dibujo. Toca un sprite por rumbo, que es
+  como estuvo hecho el oleaje hasta que paso a shader (doce orientaciones por
+  trazo, una cada quince grados) y sigue estando en el historial de
+  `src/art.lua` para copiarlo.
 * **Comercio real** — hoy solo se vende pescado. La bodega ya tiene capacidad;
   faltan mercancias que valgan distinto en cada puerto.
 * **Las islas no hacen nada** — son decorado. No hay colision ni interaccion:
