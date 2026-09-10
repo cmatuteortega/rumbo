@@ -30,6 +30,31 @@ function Util.hashInt(lo, hi, a, b, c)
     return lo + math.floor(Util.hash01(a, b, c) * (hi - lo + 1)) % (hi - lo + 1)
 end
 
+-- Hash para REJILLAS: cuando lo que se pide son numeros de casillas vecinas, o
+-- varios numeros distintos de la misma casilla. `Util.hash01` no sirve para eso,
+-- y las dos razones se ven en pantalla:
+--
+--   * su tercer argumento no hace nada. Entra multiplicado por 2147483647, que
+--     es justo el modulo, asi que se anula. Pedirle tres numeros a la misma
+--     posicion cambiando solo ese argumento devuelve tres veces el mismo.
+--   * y es casi AFIN -- por dentro son dos vueltas de congruencial --, asi que
+--     dos posiciones seguidas se llevan un salto casi fijo: medida, la
+--     correlacion con el vecino de al lado es del ocho por ciento. Repartido
+--     por una rejilla eso no se lee como ruido, se lee como una rampa.
+--
+-- Para lo que hace `hash01` en el juego -- un puerto, una cara, un precio -- da
+-- igual, porque ahi las entradas no son vecinas y no hay dos numeros que salgan
+-- del mismo sitio. Y no se toca: cambiarla cambiaria los mundos ya guardados.
+--
+-- El seno es lo que rompe la linealidad. Sigue siendo funcion pura de la
+-- entrada, sin una semilla que guardar, que es lo que pide la regla. Medido en
+-- una rejilla de 256x256: media 0,500, correlacion con el vecino de al lado
+-- 0,0004, y entre dos `k` distintos 0,008.
+function Util.hashGrid(x, y, k)
+    local n = math.sin(x * 127.1 + y * 311.7 + (k or 0) * 74.7) * 43758.5453123
+    return n - math.floor(n)
+end
+
 -- Hash de un texto, para poder meter un nombre en Util.hash01. Es lo que
 -- permite derivar de un tripulante la cara con la que se pinta y el compas de
 -- su paseo por cubierta sin guardar ni una semilla mas en la partida.

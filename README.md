@@ -663,12 +663,69 @@ bajio, un dos por ciento de espuma y dos pixeles de cada mil en blanco. Subir el
 brillo del monton es lo que convirtio la primera version en un chaparron.
 
 Dos cosas del shader no se ven pero sin ellas no hay mar. La primera: el campo
-es **periodico** -- los hashes muerden la celda en modulo --, porque a las pocas
-horas de singladura las coordenadas del mundo son tan grandes que `fract()` se
-queda sin decimales y el mar hierve. La segunda: el origen del campo **se
-arrastra** en vez de calcularse desde `state.x`, porque el eje del campo gira
-con el viento y proyectar una posicion enorme sobre un eje que rola hace que el
-mar salga disparado de lado en cuanto el viento rola un grado.
+es **periodico**, porque a las pocas horas de singladura las coordenadas del
+mundo son tan grandes que `fract()` se queda sin decimales y el mar hierve. La
+segunda: el origen del campo **se arrastra** en vez de calcularse desde
+`state.x`, porque el eje del campo gira con el viento y proyectar una posicion
+enorme sobre un eje que rola hace que el mar salga disparado de lado en cuanto
+el viento rola un grado.
+
+### En el mar no puede haber un numero grande
+
+Esta seccion existe por un fallo que en escritorio no se ve nunca. El mar se
+veia en el PC y en el movil no: azul liso de arriba abajo, sin una veta de
+espuma, y encima la estela del barco tan visible como siempre.
+
+La estela es la pista. Es geometria de pantalla -- la distancia de un pixel a
+una polilinea, numeros de dos cifras y sin `fract()` de por medio --, asi que
+sobrevive donde el oleaje se muere. Y lo que mata al oleaje es el **tamano de
+los numeros**: un `float` de escritorio tiene veinticuatro bits de mantisa y le
+da igual todo, pero la precision de un fragmento de movil puede ser de dieciseis
+bits, o de once. A once bits, `fract()` de un numero de dos cifras deja un
+punado de valores distintos, y de un voronoi con un punado de valores distintos
+no sale espuma: sale un color plano.
+
+Medido, simulando la precision corta sobre el mismo fotograma: con el hash
+calculado a mano, un fragmento de once bits deja el **99,7 %** de la pantalla en
+azul y cero pixeles de espuma. Con el grano leido de una textura, el mismo
+fotograma a once bits sale **identico** al de veinticuatro. Esa es toda la
+diferencia.
+
+De ahi tres decisiones del shader:
+
+* **El grano se lee, no se calcula.** El hash aritmetico del shader original
+  lleva sus numeros intermedios al cincuenta largo, y ahi es donde pierde los
+  decimales. Una textura de ruido de 256x256 con cuatro numeros por celda -- los
+  dos del meneo de la semilla, el del corte que tira una de cada tres y el de
+  las manchas de mar liso -- vale lo que vale en cualquier maquina. De paso son
+  treinta lecturas de una textura que cabe en la cache donde antes habia casi
+  sesenta hashes por pixel.
+* **Del origen solo viaja el decimal.** Las celdas enteras entran como
+  desplazamiento DENTRO de la textura, donde no cuestan precision, asi que la
+  coordenada que se parte con `floor`/`fract` no pasa de las cuarenta celdas que
+  caben en pantalla. La repeticion de la textura hace ademas el modulo del campo
+  sin que nadie lo calcule.
+* **Las fases llegan envueltas en una vuelta.** Se calculan en Lua, con dobles.
+  Un `sin()` de setecientos radianes -- que es lo que pedia la comba con la
+  coordenada absoluta -- es ruido en cuanto la maquina no es un PC.
+
+El grano **no sale de `Util.hash01`**, y esa es la unica excepcion a la regla de
+que toda la variacion sale de ahi. Por dos motivos, los dos visibles en
+pantalla: su tercer argumento no hace nada (entra multiplicado por 2147483647,
+que es justo el modulo, asi que se va a cero -- pedirle cuatro canales por ahi
+devuelve cuatro veces el mismo numero, las celdas se mueven todas en diagonal y
+el mar se convierte en una escalera), y ademas es casi **afin**, con una
+correlacion del ocho por ciento con el vecino de al lado; repartido por una
+textura eso no se lee como ruido, se lee como una rampa, con la espuma
+amontonada en una franja. Para el mundo da igual -- un puerto no tiene vecino al
+lado --, pero una textura de ruido es justo el caso que lo destapa. El grano se
+mezcla con un seno en `src/surface.lua`: sigue siendo funcion pura de la
+posicion, sin una semilla guardada, y medido a 256x256 da media 0,500,
+correlacion con el vecino 0,0004 y entre canales 0,008.
+
+Lo que **no** cambio fue el aspecto: al cambiar el grano se volvieron a ajustar
+los cuatro numeros de la espuma midiendo el reparto de los cinco colores, y el
+ajuste que mas se parecia al mar de antes era dejarlos donde estaban.
 
 ### La estela dice lo que hace el barco
 

@@ -45,6 +45,16 @@ ImageData.__index = ImageData
 function ImageData:setPixel(x, y, r, g, b, a)
     self.p[y * self.w + x + 1] = { r, g, b, a }
 end
+-- El grano del mar se genera con esto, asi que el love de mentira lo recorre
+-- de verdad: es lo que permite comprobar sin ventana que la textura sale
+-- entera y con los cuatro canales puestos.
+function ImageData:mapPixel(f)
+    for y = 0, self.h - 1 do
+        for x = 0, self.w - 1 do
+            self.p[y * self.w + x + 1] = { f(x, y) }
+        end
+    end
+end
 
 love = setmetatable({}, { __index = function()
     return setmetatable({}, { __index = function() return nop end })
@@ -57,7 +67,7 @@ love.image = { newImageData = function(w, h)
 end }
 love.graphics = setmetatable({
     newImage = function(data)
-        return { data = data, setFilter = nop,
+        return { data = data, setFilter = nop, setWrap = nop,
                  getWidth = function() return data.w end,
                  getHeight = function() return data.h end }
     end,
@@ -266,8 +276,13 @@ end
 
 print("\nel agua desfila aunque el barco no ande")
 do
-    -- El origen del campo se envuelve, asi que la resta se hace por el camino
-    -- corto.
+    -- El origen llega partido en celda entera y decimal (asi el movil no se
+    -- queda sin cifras), asi que para medirlo hay que volver a juntarlo.
+    local function origin(i)
+        return sent.uSeed[i] * Surface.WRAP + sent.uOrigin[i]
+    end
+
+    -- Y se envuelve, asi que la resta se hace por el camino corto.
     local function gap(a, b)
         return (a - b + Surface.WRAP / 2) % Surface.WRAP - Surface.WRAP / 2
     end
@@ -275,26 +290,26 @@ do
     local s = sail(0, 1.0, math.pi / 2)
     s.docked = "x"                       -- amarrado: el barco no anda
     shot(s)
-    local antes = sent.uOrigin[1]
+    local antes = origin(1)
     for _ = 1, 30 do Sea.update(s, 1 / 30) end
     shot(s)
     check("amarrado, el agua sigue corriendo a sotavento",
-          gap(sent.uOrigin[1], antes) < -2,
-          string.format("%.1f celdas en un segundo", gap(sent.uOrigin[1], antes)))
+          gap(origin(1), antes) < -2,
+          string.format("%.1f celdas en un segundo", gap(origin(1), antes)))
 
     -- Y andando, el campo tiene que correr ademas por debajo del barco: si no,
     -- el mar seria una tela pintada delante de la que el barco resbala.
     local quieto = sail(0, 0.55, math.pi / 2, 2)
     quieto.docked = "x"
     shot(quieto)
-    local a0 = sent.uOrigin[2]
+    local a0 = origin(2)
     for _ = 1, 60 do Sea.update(quieto, 1 / 30) end
     shot(quieto)
-    local sinAndar = math.abs(gap(sent.uOrigin[2], a0))
+    local sinAndar = math.abs(gap(origin(2), a0))
 
     local anda = sail(0, 0.55, math.pi / 2 + 0.7, 2)
     shot(anda)
-    local b0 = sent.uOrigin[2]
+    local b0 = origin(2)
     for _ = 1, 120 do
         local fx, fy = Util.headingToVector(anda.heading)
         local d = Ship.speed(anda) * (1 / 30)
@@ -305,9 +320,102 @@ do
     -- Parado, el eje cruzado no se mueve NADA: por ahi no desfila el agua.
     -- Andando de traves si, y eso es lo que ata el campo al mundo.
     check("y andando de traves el campo corre ademas de lado",
-          sinAndar == 0 and math.abs(gap(sent.uOrigin[2], b0)) > 0.5,
+          sinAndar == 0 and math.abs(gap(origin(2), b0)) > 0.5,
           string.format("%.2f celdas de lado contra %.2f parado",
-                        math.abs(gap(sent.uOrigin[2], b0)), sinAndar))
+                        math.abs(gap(origin(2), b0)), sinAndar))
+end
+
+--== Precision ============================================================
+
+-- Esta seccion existe por un fallo que no se veia en el PC de nadie: el mar
+-- entero desaparecia en el movil y quedaba el azul liso, con la estela encima
+-- tan visible como siempre. La causa era el tamano de los NUMEROS. Un float de
+-- escritorio tiene veinticuatro bits de mantisa; el de un fragmento de movil
+-- puede tener dieciseis, o once. Con once, `fract(1536.4)` -- que es lo que
+-- pedia la octava fina -- deja un solo escalon por celda: no hay espuma que
+-- calcular. La estela se salvaba porque es geometria de pantalla, numeros de
+-- dos cifras.
+--
+-- Asi que lo que se mide aqui no es como se ve el mar, es que la cuenta quepa:
+-- la coordenada que se corta con floor/fract no puede pasar de la pantalla, y
+-- ningun angulo puede pasar de unas pocas vueltas. Si alguien vuelve a mandar
+-- la posicion absoluta al shader, esto se pone rojo antes de que nadie
+-- desempaquete un .love en un telefono.
+
+print("\nel mar cabe en un movil")
+do
+    local s = sail(0, 1.0, math.pi / 2)
+    -- Una singladura larga: el origen tiene que haber dado varias vueltas.
+    for _ = 1, 3000 do
+        local fx, fy = Util.headingToVector(s.heading)
+        local d = Ship.speed(s) * (1 / 30)
+        s.x, s.y = s.x + fx * d, s.y + fy * d
+        s.time = s.time + 1 / 30
+        Sea.update(s, 1 / 30)
+    end
+    shot(s)
+
+    check("el decimal del origen es un decimal",
+          sent.uOrigin[1] >= 0 and sent.uOrigin[1] < 1
+      and sent.uOrigin[2] >= 0 and sent.uOrigin[2] < 1,
+          string.format("%.3f, %.3f", sent.uOrigin[1], sent.uOrigin[2]))
+
+    -- Y las celdas enteras viajan como coordenada de textura: un numero de
+    -- texel exacto, entre cero y uno, que es donde no cuesta precision.
+    check("y las celdas van dentro de la textura, en texel entero",
+          (sent.uSeed[1] * Surface.WRAP) % 1 == 0
+      and (sent.uSeed[2] * Surface.WRAP) % 1 == 0
+      and sent.uSeed[1] >= 0 and sent.uSeed[1] < 1
+      and sent.uSeed[2] >= 0 and sent.uSeed[2] < 1
+      and (sent.uSeedOct[1] * Surface.WRAP) % 1 == 0
+      and sent.uSeedOct[1] >= 0 and sent.uSeedOct[1] < 1,
+          string.format("%.4f, %.4f (fina %.4f)",
+                        sent.uSeed[1], sent.uSeed[2], sent.uSeedOct[1]))
+
+    -- El grano: cuatro canales por texel, y los mismos en cada arranque.
+    local tex = Surface.testGrain()
+    local canales = 0
+    for _, v in ipairs(tex.p[1]) do
+        if type(v) == "number" then canales = canales + 1 end
+    end
+    check("y el grano es una textura entera de cuatro canales",
+          #tex.p == Surface.WRAP * Surface.WRAP and canales == 4,
+          string.format("%d texeles de %d canales", #tex.p, canales))
+
+    -- Lo que de verdad importa: la coordenada que el shader parte en
+    -- floor/fract. Se mide en las cuatro esquinas del lienzo, que es donde se
+    -- va mas lejos del barco.
+    local peor, peorY = 0, 0
+    for _, pix in ipairs({ { 0.5, 0.5 },
+                           { Constants.ART_W - 0.5, 0.5 },
+                           { 0.5, Constants.ART_H - 0.5 },
+                           { Constants.ART_W - 0.5, Constants.ART_H - 0.5 } }) do
+        local dx = pix[1] - sent.uAnchor[1]
+        local dy = pix[2] - sent.uAnchor[2]
+        local qx = sent.uOrigin[1] + dx * sent.uBasisX[1] + dy * sent.uBasisY[1]
+        local qy = sent.uOrigin[2] + dx * sent.uBasisX[2] + dy * sent.uBasisY[2]
+        peor  = math.max(peor, math.abs(qx), math.abs(qy))
+        peorY = math.max(peorY, math.abs(qy))
+    end
+    -- Con la octava fina son tres veces mas. El tope es generoso a proposito:
+    -- lo que se vigila es el orden de magnitud, no el numero exacto.
+    check("y la coordenada del campo cabe en la pantalla",
+          peor * 3 < 200,
+          string.format("%.1f celdas en la esquina, %.1f en la octava fina",
+                        peor, peor * 3))
+
+    -- Los angulos. El seno de setecientos radianes es ruido en cuanto la
+    -- maquina no es un PC, y eso es lo que se mandaba antes.
+    local K1 = 122 * Util.TAU / Surface.WRAP
+    local K2 =  65 * Util.TAU / Surface.WRAP
+    local comba = peorY * K1 + sent.uPhi[2] + sent.uWave[1]
+    check("y ningun seno pide mas de unas vueltas",
+          comba < 60 and sent.uPhi[1] < Util.TAU and sent.uPhi[2] < Util.TAU
+      and sent.uWave[1] < Util.TAU and sent.uWave[2] < Util.TAU
+      and sent.uWave[3] < Util.TAU and sent.uWave[4] < Util.TAU,
+          string.format("%.1f rad en la comba, %.1f de fase mas alta",
+                        comba, math.max(sent.uPhi[1], sent.uPhi[2],
+                                        sent.uWave[1], sent.uWave[4])))
 end
 
 --== Estela ================================================================

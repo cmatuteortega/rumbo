@@ -235,9 +235,15 @@ local function shedSpray(state, dt, frac, sea)
     while sprayAcc >= 1 do
         sprayAcc = sprayAcc - 1
         sprayN = sprayN + 1
-        local r1 = Util.hash01(sprayN, math.floor(state.time * 13), 41)
-        local r2 = Util.hash01(sprayN, math.floor(state.time * 13), 42)
-        local r3 = Util.hash01(sprayN, math.floor(state.time * 13), 43)
+        -- Tres numeros DISTINTOS de la misma gota, y por eso `hashGrid` y no
+        -- `hash01`: a esta ultima el tercer argumento se le anula, asi que los
+        -- tres salian el mismo numero y la gota tenia atados el costado, el
+        -- tamano y la separacion del casco. Se veia sin saber que se estaba
+        -- viendo: todas las gotas grandes por el mismo lado.
+        local t = math.floor(state.time * 13)
+        local r1 = Util.hashGrid(sprayN, t, 41)
+        local r2 = Util.hashGrid(sprayN, t, 42)
+        local r3 = Util.hashGrid(sprayN, t, 43)
         local side = (r1 < 0.68) and lee or -lee
         -- Nace YA fuera del casco, no en la crujia: la roda no tiene manga y
         -- una gota sembrada en el eje pasa la mitad de su vida escondida
@@ -318,8 +324,10 @@ local function drawScenery(state)
     forEachCell(state.x, state.y, cell, 40, function(cx, cy)
         local roll = Util.hash01(state.seed + cx, cy, 21)
         if roll <= 0.72 then return end
-        local wx = (cx + Util.hash01(cx, cy, 22)) * cell
-        local wy = (cy + Util.hash01(cx, cy, 23)) * cell
+        -- Lo mismo aqui: con `hash01` los dos desplazamientos salian iguales
+        -- y todas las islas caian clavadas en la diagonal de su casilla.
+        local wx = (cx + Util.hashGrid(cx, cy, 22)) * cell
+        local wy = (cy + Util.hashGrid(cx, cy, 23)) * cell
         local x, y = Sea.project(state, wx, wy)
         if onScreen(x, y, 40) then
             Art.drawCentered(roll > 0.88 and "sea.island" or "sea.rock", x, y)

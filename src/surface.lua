@@ -31,9 +31,33 @@
 -- **El campo es PERIODICO.** Los hashes muerden la celda en modulo `WRAP`, y
 -- el origen se envuelve en ese mismo modulo. Sin eso, a las pocas horas de
 -- singladura las coordenadas del mundo son tan grandes que `fract()` se queda
--- sin decimales y el mar hierve; con eso, los numeros no pasan nunca de
--- quinientos y pico y la vuelta del campo no se ve porque cae a cinco mil
--- pixeles de mundo, que son veinte pantallas largas.
+-- sin decimales y el mar hierve; con eso, la vuelta del campo no se ve porque
+-- cae a cinco mil pixeles de mundo, que son veinte pantallas largas.
+--
+-- **Ningun numero del campo puede ser grande.** Esta es la diferencia entre
+-- verse en un PC y no verse en un telefono, y costo un rato entenderla. Un
+-- `float` de escritorio tiene veinticuatro bits de mantisa y le da igual todo;
+-- la precision de un fragmento de movil puede ser de dieciseis bits, o de once,
+-- y con once `fract()` de un numero de dos cifras ya no distingue casi nada. El
+-- sintoma era el mar entero en azul liso, sin una veta de espuma, con la estela
+-- encima tan visible como siempre -- porque la estela son distancias en
+-- pantalla, numeros de dos cifras y sin `fract` de por medio.
+--
+-- La salida no es pedir mas precision (que se pide igual, por si acaso: ver
+-- HIGHP), es no necesitarla. Tres cosas:
+--
+--   * el grano ya no se calcula, se LEE de una textura. El hash aritmetico del
+--     shader original se lleva sus numeros al cincuenta largo, y ahi es donde
+--     se moria; un texel vale lo que vale en cualquier maquina. Medido con la
+--     cuenta a once bits: 99,7 % de la pantalla en azul y cero espuma con el
+--     hash calculado, y el mar de PC clavado leyendolo.
+--   * del origen solo viaja el DECIMAL (`uOrigin`); las celdas enteras van como
+--     desplazamiento dentro de la textura (`uSeed`), donde no cuestan
+--     precision. Asi la coordenada que se parte con `floor`/`fract` no pasa de
+--     las cuarenta celdas que caben en pantalla.
+--   * las fases del oleaje llegan ya envueltas en una vuelta (`uWave`, `uPhi`)
+--     en vez de multiplicarse dentro: un `sin()` de setecientos radianes es
+--     ruido en cuanto la maquina no es un PC.
 --
 -- **La estela va DENTRO del agua, no encima.** El barco no se limita a pasar:
 -- abre una calle. Lua le manda la derrota -- los ultimos puntos por donde ha
@@ -69,9 +93,12 @@ local Surface = {}
 Surface.CELL = 10
 Surface.STRETCH = { 1.6, 1.9 }   -- en calma, y lo que sube con viento fresco
 
--- El campo se repite cada tantas celdas, y el origen se envuelve ahi. Son
--- 5120 pixeles de mundo a lo largo del viento: veinte pantallas largas.
-Surface.WRAP = 512
+-- El campo se repite cada tantas celdas, y el origen se envuelve ahi. Es
+-- tambien el lado de la textura de grano, porque son la misma cosa: cada celda
+-- muerde un texel y la textura se repite sola. Son 2560 pixeles de mundo a lo
+-- largo del viento -- diez pantallas -- y cuatro veces mas cruzado, que es
+-- donde las celdas van estiradas.
+Surface.WRAP = 256
 
 -- El tiempo llega al shader envuelto en este periodo. Todos los ritmos de
 -- dentro son multiplos enteros de 2*pi/PERIOD, asi que la vuelta no da tiron.
@@ -97,37 +124,72 @@ Surface.TRACK = 24
 Surface.SPREAD = 0.32
 Surface.ARM    = 26
 
+-- Las mismas frecuencias de comba que el shader, para poder adelantarle aqui
+-- la fase que le toca a la celda entera. Si se tocan alli, se tocan aqui.
+-- Enteros: es lo que hace que la comba quepa un numero exacto de veces en el
+-- periodo del campo. Con 61 la frecuencia es la misma que tenia con el campo
+-- del doble de largo; 33 sube un uno y medio por ciento la otra, y eso no lo
+-- ve nadie.
+local K1 = 61 * Util.TAU / Surface.WRAP
+local K2 = 33 * Util.TAU / Surface.WRAP
+
 --==========================================================================
 -- El shader
 --==========================================================================
 
-local SOURCE = [[
-// En movil la precision por defecto puede ser mediump, y con mediump los
-// hashes se quedan sin decimales: las celdas salen a bandas y el mar pierde
-// la mitad de los rizos. Se pide highp donde lo haya. En escritorio no existen
-// los calificadores de precision, de ahi la guarda.
+-- La cabecera de precision va aparte porque se prueban DOS. GLSL ES define
+-- `GL_FRAGMENT_PRECISION_HIGH` cuando el fragmento tiene highp, pero hay
+-- controladores que no lo definen y lo tienen igual, y el precio de creerles es
+-- quedarse en mediump, que aqui es quedarse sin mar. Asi que primero se pide
+-- highp a secas; si esa no compila -- un movil de verdad sin highp -- se cae a
+-- la version con guarda, que compila siempre. En escritorio no existen los
+-- calificadores de precision y las dos se quedan en nada.
+local HIGHP = [[
+#ifdef GL_ES
+precision highp float;
+#endif
+]]
+
+local GUARDED = [[
 #if defined(GL_ES) && defined(GL_FRAGMENT_PRECISION_HIGH)
 precision highp float;
 #endif
+]]
 
+local BODY = [[
 #define TAU 6.2831853
-#define WRAP 512.0
+#define WRAP 256.0
 #define OCT 3.0
-#define RATE (TAU / 240.0)
 #define TRACK 24
 
 // Frecuencias de la comba. NO son redondas a proposito: tienen que caber un
 // numero entero de veces en WRAP, o al envolver el origen la pantalla entera
 // pegaria un salto de fase.
-#define K1 (122.0 * TAU / WRAP)
-#define K2 (65.0  * TAU / WRAP)
+#define K1 (61.0 * TAU / WRAP)
+#define K2 (33.0 * TAU / WRAP)
 
 extern vec2 uSize;      // el lienzo, en pixeles de arte
 extern vec2 uAnchor;    // donde esta el barco, en pixeles de arte
-extern vec2 uOrigin;    // el campo bajo el barco
+// El campo bajo el barco. Del origen, aqui solo llega el DECIMAL: las celdas
+// enteras viajan como desplazamiento dentro de la textura de grano (uSeed), que
+// es donde no cuestan precision ninguna.
+extern vec2 uOrigin;
+
+// El grano: una textura de ruido de WRAP x WRAP con cuatro numeros por celda
+// (dos para el meneo de la semilla, uno para el corte y uno para las manchas de
+// mar liso). El desplazamiento del campo entra como coordenada de textura --
+// uSeed para la capa gruesa y uSeedOct para la fina --, y la repeticion de la
+// textura hace el modulo sola.
+extern Image uNoise;
+extern vec2 uSeed;
+extern vec2 uSeedOct;
+// Fases ya envueltas: uPhi es la que le toca en la comba al trozo de mundo en
+// el que estamos, y uWave las cuatro del oleaje (comba larga, comba corta,
+// celdas, octava fina). Se calculan en Lua con dobles y llegan en una vuelta.
+extern vec2 uPhi;
+extern vec4 uWave;
 extern vec2 uBasisX;    // lo que corre el campo por pixel a estribor
 extern vec2 uBasisY;    // ... y por pixel hacia abajo de la pantalla
-extern float uTime;
 extern float uWarp;     // cuanto ondulan las lineas de cresta
 extern float uGain;     // cuanta espuma deja el viento que sopla
 extern float uDark;     // a partir de que sombra sale el agua honda
@@ -153,20 +215,26 @@ extern float uBow;
 extern float uWash;
 extern float uBreak;    // escalon del blanco de la ESTELA, aparte del del mar
 
-// Los hashes del shader original, con la celda mordida en modulo: es lo que
-// hace el campo periodico y lo que mantiene los numeros pequenos.
-float hash12(vec2 p, float per) {
-    p = mod(p, per);
-    vec3 p3 = fract(vec3(p.xyx) * .1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-}
-
-vec2 hash22(vec2 p, float per) {
-    p = mod(p, per);
-    vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973));
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.xx + p3.yz) * p3.zy);
+// El grano sale de una TEXTURA y no de una cuenta, y esa es la diferencia
+// entre verse en un PC y no verse en un telefono.
+//
+// El hash del shader original (el de Dave Hoskins, `fract(p * .1031)` y un
+// producto escalar con 33.33 encima) es exacto de sobra en escritorio y no
+// sobrevive en movil: sus numeros intermedios andan por el cincuenta, y a once
+// bits de mantisa `fract()` de un cincuenta y pico deja media docena de valores
+// distintos. Medido: con el hash calculado a lo bruto, un fragmento corto deja
+// el 99,7 % de la pantalla en azul liso -- ni una veta de espuma --, mientras la
+// estela, que son numeros de dos cifras, se sigue viendo perfecta. Era
+// exactamente lo que se veia en el telefono.
+//
+// Un texel no tiene ese problema: vale lo que vale, lo lea quien lo lea. Y de
+// paso son treinta lecturas de una textura de 256x256 -- que cabe entera en la
+// cache -- donde antes habia casi sesenta hashes por pixel.
+//
+// El medio texel es para caer siempre en el centro: con el desplazamiento
+// sumado, el redondeo mas torpe se queda a un octavo de texel del borde.
+vec4 grain(vec2 i, vec2 seed) {
+    return Texel(uNoise, (i + 0.5) * (1.0 / WRAP) + seed);
 }
 
 // Distancia entre la celda mas cercana y la segunda. Vale casi cero justo en
@@ -174,19 +242,23 @@ vec2 hash22(vec2 p, float per) {
 // dentro. Una de cada tres semillas se cae, y eso es lo que rompe la reticula
 // en trozos sueltos en vez de una malla cerrada.
 //
+// `q` es la posicion DENTRO de la pantalla y nunca pasa de unas decenas: el
+// trozo de mundo en el que estamos va en `seed`, en coordenada de textura. Es
+// la misma idea que el grano -- que lo gordo no toque nunca a lo fino.
+//
 // El corte era `pow(hash, .6) < 0.5` en el shader original. Es exactamente lo
-// mismo que comparar el hash contra 0.5^(1/0.6), y asi se ahorran veintisiete
+// mismo que comparar el numero contra 0.5^(1/0.6), y asi se ahorran veintisiete
 // pow por pixel y capa -- y sobre todo se evita pow(0, y), que hay
 // controladores que devuelven NaN y con NaN aqui se va la pantalla entera.
-float cells(vec2 st, float phase, float per) {
-    vec2 i = floor(st), f = fract(st);
+float cells(vec2 q, vec2 seed, float phase) {
+    vec2 i = floor(q), f = fract(q);
     float m1 = 9.0, m2 = 9.0;
     for (int y = -1; y <= 1; y++) {
         for (int x = -1; x <= 1; x++) {
             vec2 n = vec2(float(x), float(y));
-            vec2 c = i + n;
-            if (hash12(c, per) < 0.31498) continue;
-            vec2 p = 0.5 + .3 * sin(TAU * hash22(c, per) + phase);
+            vec4 g = grain(i + n, seed);
+            if (g.b < 0.31498) continue;
+            vec2 p = 0.5 + .3 * sin(TAU * g.rg + phase);
             float d = length(n + p - f);
             if (d < m1) { m2 = m1; m1 = d; }
             else if (d < m2) m2 = d;
@@ -197,13 +269,15 @@ float cells(vec2 st, float phase, float per) {
 
 // Ruido de valor: las manchas de mar picado y de mar liso. Sin el, la espuma
 // sale repartida por igual y el mar se lee como un papel pintado.
-float vnoise(vec2 p, float per) {
-    vec2 i = floor(p), f = fract(p);
+float vnoise(vec2 q, vec2 seed) {
+    vec2 i = floor(q), f = fract(q);
     f = f * f * (3.0 - 2.0 * f);
-    float a = hash12(i, per);
-    float b = hash12(i + vec2(1.0, 0.0), per);
-    float c = hash12(i + vec2(0.0, 1.0), per);
-    float d = hash12(i + vec2(1.0, 1.0), per);
+    // El cuarto canal, que es el unico que no usa el voronoi: asi las manchas
+    // de mar liso no salen calcadas al corte de las semillas.
+    float a = grain(i,                  seed).a;
+    float b = grain(i + vec2(1.0, 0.0), seed).a;
+    float c = grain(i + vec2(0.0, 1.0), seed).a;
+    float d = grain(i + vec2(1.0, 1.0), seed).a;
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
@@ -245,18 +319,22 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
     // no entre medias.
     vec2 pix = floor(tc * uSize) + 0.5;
     vec2 px  = pix - uAnchor;
-    vec2 st = uOrigin + px.x * uBasisX + px.y * uBasisY;
+    // Y el campo se mide desde el barco, no desde el origen del mundo: asi lo
+    // que se corta en decimales es la pantalla y no la singladura.
+    vec2 q = uOrigin + px.x * uBasisX + px.y * uBasisY;
 
     // La comba. Una linea de cresta recta de punta a punta es un peine; con
-    // esto respira y se dobla como el agua.
-    st.x += sin(st.y * K1 + uTime * RATE * 13.0) * uWarp;
-    st.y += sin(st.x * K2 - uTime * RATE *  5.0) * 0.10;
+    // esto respira y se dobla como el agua. La fase que le corresponde al
+    // trozo de mundo en el que estamos viene ya sumada en uPhi, que es lo que
+    // deja estos dos senos por debajo de una veintena de radianes.
+    q.x += sin(q.y * K1 + uPhi.y + uWave.x) * uWarp;
+    q.y += sin(q.x * K2 + uPhi.x - uWave.y) * 0.10;
 
-    float d1 = cells(st,       uTime * RATE *  9.0, WRAP);
-    float d2 = cells(st * OCT, uTime * RATE * 27.0, WRAP * OCT);
+    float d1 = cells(q,       uSeed,    uWave.z);
+    float d2 = cells(q * OCT, uSeedOct, uWave.w);
     // La sombra va MEDIA celda a barlovento de la cresta: es el dorso de la
     // ola, y es lo que le da bulto en vez de dejarla plana.
-    float d3 = cells(st + vec2(0.45, 0.0), uTime * RATE * 9.0, WRAP);
+    float d3 = cells(q + vec2(0.45, 0.0), uSeed, uWave.z);
 
     float vein = 1.0 - smoothstep(0.0, 0.50, d1);
     float fine = 1.0 - smoothstep(0.0, 0.25, d2 * d2);
@@ -264,7 +342,7 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
 
     // La mancha manda sobre la veta: donde el mar esta liso no hay espuma por
     // mucho que pase una frontera de celda por encima.
-    float lift = pow(0.10 + 0.90 * vnoise(st, WRAP), 1.6) * uGain;
+    float lift = pow(0.10 + 0.90 * vnoise(q, uSeed), 1.6) * uGain;
 
     // Y aqui pasa el barco.
     vec3 wk = wakeAt(pix);
@@ -415,6 +493,18 @@ function Surface.frame(state, sea, wake)
 
     local cx, cy = Constants.shipAnchor()
 
+    -- Las celdas enteras del origen y su decimal. `ou`/`ov` ya vienen
+    -- envueltos en WRAP, asi que `iu`/`iv` caben de sobra en un float corto.
+    local iu, iv = math.floor(ou), math.floor(ov)
+
+    -- Las fases del oleaje, envueltas en una vuelta. Los ritmos son multiplos
+    -- enteros de 2*pi/PERIOD, asi que envolver aqui no da tiron: es el mismo
+    -- angulo, solo que con la parte que no dice nada quitada antes de mandarlo.
+    local t = state.time % Surface.PERIOD
+    local function rock(n)
+        return (t * n * Util.TAU / Surface.PERIOD) % Util.TAU
+    end
+
     -- El blanco solo aparece con viento hecho, y no de golpe: por debajo de
     -- 0,35 el escalon queda por encima de uno, que es mas de lo que la cuenta
     -- de espuma puede dar, asi que en calma no hay un pixel blanco. No es que
@@ -436,11 +526,34 @@ function Surface.frame(state, sea, wake)
         -- justo los dias de poco viento.
         brk     = 0.62,
         anchor  = { cx, cy },
-        origin  = { ou, ov },
+        -- El origen, partido: el decimal va al shader como coordenada del
+        -- campo y las celdas enteras como desplazamiento DENTRO de la textura
+        -- de grano. Mandar el total, que es lo natural, es lo que se veia en
+        -- PC y no en el movil.
+        origin  = { ou - iu, ov - iv },
+        seed    = { iu / Surface.WRAP, iv / Surface.WRAP },
+        -- La octava fina muerde la misma textura tres veces mas apretado, asi
+        -- que su desplazamiento es el triple. Los dos numeros sueltos la apartan
+        -- del campo gordo: sin ellos, al pasar el origen por cero las dos capas
+        -- caerian en el mismo sitio de la textura y la fina saldria calcada a la
+        -- gruesa. Son multiplos exactos de un texel, asi que no descuadran nada.
+        seedOct = { ((iu * 3 + 96)  % Surface.WRAP) / Surface.WRAP,
+                    ((iv * 3 + 181) % Surface.WRAP) / Surface.WRAP },
+        -- La fase que le toca a ESE trozo de mundo en la comba. Va aparte
+        -- porque `sin(celda * K)` con la celda en las centenas son cientos de
+        -- radianes, y de ahi para abajo no hay maquina que acierte.
+        phi     = { (iu * K2) % Util.TAU, (iv * K1) % Util.TAU },
+        wave    = { rock(13), rock(5), rock(9), rock(27) },
         basisX  = { (ex * wx + ey * wy) / cw, (ex * nx + ey * ny) / cn },
         basisY  = { (fx * wx + fy * wy) / cw, (fx * nx + fy * ny) / cn },
-        time    = state.time % Surface.PERIOD,
         warp    = 0.30 * (0.35 + 0.65 * sea),
+        -- Estos cuatro numeros NO se han tocado al cambiar el grano de cuenta
+        -- a textura, y no por pereza: se volvieron a ajustar midiendo, y el
+        -- ajuste que mas se parecia al mar de antes era dejarlos donde
+        -- estaban. Con el grano bien repartido, el reparto de los cinco
+        -- colores sale solo -- cuatro por ciento de agua honda, diecisiete de
+        -- bajio, dos y medio de espuma y uno de rompiente con viento hecho --,
+        -- que es lo que dice que el cambio fue de fontaneria y no de aspecto.
         gain    = 0.30 + 0.70 * sea,
         dark    = 0.45,
         cut     = { 0.24, 0.60, white },
@@ -451,30 +564,83 @@ end
 -- Dibujo
 --==========================================================================
 
-local shader, canvas, quad, tried
+local shader, canvas, quad, noise, tried
 
 -- El mar se pinta en un lienzo a escala de ARTE y se sube entero de un tiron.
 -- No es un ahorro cualquiera: una pantalla de movil son veinticinco veces mas
 -- pixeles que el area de arte, y ademas asi cada invocacion del shader ES un
 -- pixel del juego, con lo que la rejilla sale cuadrada sola.
+-- Los cuatro canales del grano tienen que ser cuatro numeros distintos de la
+-- misma celda, y ademas no parecerse a los de la celda de al lado. Eso es justo
+-- lo que `Util.hash01` no sabe hacer -- su tercer argumento se anula y es casi
+-- afin --, y por eso existe `Util.hashGrid`, que lo explica entero.
+--
+-- Se nota enseguida cuando se usa el que no es: con los cuatro canales iguales,
+-- los dos numeros del meneo de la semilla salen el mismo, las celdas se mueven
+-- todas en diagonal y el mar se convierte en una escalera.
+
+-- El grano del mar: cuatro numeros por celda -- los dos del meneo de la
+-- semilla, el del corte que tira una de cada tres y el de las manchas de mar
+-- liso -- metidos en los cuatro canales de una textura de WRAP x WRAP.
+--
+-- Se calcula y no se guarda como PNG, como todo lo variado de este juego: es la
+-- misma textura en cada arranque y en cada maquina, asi que el mar de una
+-- captura de pantalla es el mar de cualquier otra.
+--
+-- Se repite (`setWrap`) y se lee al vecino mas cercano: la repeticion es la que
+-- hace el modulo del campo sin que nadie tenga que calcularlo, y el vecino mas
+-- cercano es obligatorio -- interpolar el grano seria promediar semillas de
+-- celdas distintas y el voronoi se deshace.
+-- Se saca aparte de la imagen porque es lo unico del mar que no viaja como
+-- uniforme: la prueba sin ventana lo pide asi para poder mirarlo.
+function Surface.testGrain()
+    local n = Surface.WRAP
+    local data = love.image.newImageData(n, n)
+    data:mapPixel(function(x, y)
+        return Util.hashGrid(x, y, 1), Util.hashGrid(x, y, 2),
+               Util.hashGrid(x, y, 3), Util.hashGrid(x, y, 4)
+    end)
+    return data
+end
+
+local function grain()
+    local img = love.graphics.newImage(Surface.testGrain())
+    img:setFilter('nearest', 'nearest')
+    img:setWrap('repeat', 'repeat')
+    return img
+end
+
 local function ensure()
     if not tried then
         tried = true
-        local ok, made = pcall(love.graphics.newShader, SOURCE)
-        if ok and made then
+        -- Highp a secas primero y con guarda despues. El orden importa: hay
+        -- moviles que tienen highp en el fragmento y no definen la macro que
+        -- lo anuncia, y creerles cuesta el mar entero. Si la primera no
+        -- compila es que el aparato de verdad no lo tiene, y entonces la
+        -- segunda si -- con menos mar, pero con mar.
+        local made, why, grado
+        for _, intento in ipairs({ { "highp", HIGHP }, { "con guarda", GUARDED } }) do
+            local ok, res = pcall(love.graphics.newShader, intento[2] .. BODY)
+            if ok and res then made, grado = res, intento[1] break end
+            why = res
+        end
+        if made then
             shader = made
             -- Una linea en consola, que es la unica forma de saber desde fuera
-            -- si el mar lo esta pintando el shader o el azul de respaldo.
-            print(string.format("Rumbo | mar por shader: ok (%dx%d, derrota de %d puntos)",
-                                Constants.ART_W, Constants.ART_H, Surface.TRACK))
+            -- si el mar lo esta pintando el shader o el azul de respaldo, y
+            -- con que precision -- que es lo que separa el mar de PC del que
+            -- se veia en el movil.
+            print(string.format("Rumbo | mar por shader: ok, %s (%dx%d, derrota de %d puntos)",
+                                grado, Constants.ART_W, Constants.ART_H, Surface.TRACK))
             -- El shader necesita algo sobre lo que correr, y un pixel blanco
             -- estirado a toda la pantalla es lo mas barato que hay: de la
             -- imagen no se lee nada, solo se aprovechan sus coordenadas.
             local data = love.image.newImageData(1, 1)
             data:setPixel(0, 0, 1, 1, 1, 1)
             quad = love.graphics.newImage(data)
-        elseif not ok then
-            print("Rumbo | el mar por shader no compila: " .. tostring(made))
+            noise = grain()
+        else
+            print("Rumbo | el mar por shader no compila: " .. tostring(why))
         end
     end
     if not shader then return false end
@@ -502,9 +668,13 @@ function Surface.draw(state, sea, wake)
     shader:send("uSize",   f.size)
     shader:send("uAnchor", f.anchor)
     shader:send("uOrigin", f.origin)
+    shader:send("uNoise",  noise)
+    shader:send("uSeed",   f.seed)
+    shader:send("uSeedOct", f.seedOct)
+    shader:send("uPhi",    f.phi)
+    shader:send("uWave",   f.wave)
     shader:send("uBasisX", f.basisX)
     shader:send("uBasisY", f.basisY)
-    shader:send("uTime",   f.time)
     shader:send("uWarp",   f.warp)
     shader:send("uGain",   f.gain)
     shader:send("uDark",   f.dark)

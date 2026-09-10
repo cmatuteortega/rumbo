@@ -36,7 +36,10 @@ no se ven a ojo: que **ni una** llamada pase rotacion (el love de mentira peta
 si alguien lo intenta), que el eje largo del campo caiga justo donde cae el
 viento en pantalla y el corto lo cruce en angulo recto, que con viento flojo
 haya de verdad menos espuma y que en el agua libre el blanco sea IMPOSIBLE, y
-que el agua desfile a sotavento y corra bajo el barco cuando anda. De la estela
+que el agua desfile a sotavento y corra bajo el barco cuando anda. Mide ademas
+el TAMANO de lo que se le manda al shader — la coordenada del campo, las fases,
+el grano —, que es lo unico que separaba el mar que se veia en PC del que no se
+veia en el movil. De la estela
 mide lo suyo: que la calle sea la manga del casco DIBUJADO, que la V acabe en
 punta en la roda, que se abra con lo que el barco anda y no con el reloj, y que
 virando la derrota se salga de la crujia.
@@ -113,6 +116,15 @@ desde una plantilla resucitaria tripulantes despedidos.
 posicion, semilla o tiempo como entrada. Si te ves anadiendo una semilla al
 estado guardado, probablemente hay una forma de derivarlo.
 
+Dos trampas de `Util.hash01`, las dos comprobadas: su **tercer argumento no hace
+nada** (entra multiplicado por 2147483647, que es el modulo, asi que se anula;
+para pedir dos numeros distintos hay que mover los dos primeros), y es **casi
+afin**, asi que dos posiciones vecinas se le parecen. Para lo que hace en el
+juego — un puerto, una cara, un precio — da igual, y por eso no se toca: al
+cambiarla cambiarian los mundos ya guardados. Pero no sirve para llenar una
+rejilla de ruido; el grano del mar (`src/surface.lua`) se mezcla aparte y
+explica por que.
+
 **`World.step` es correcto a cualquier `dt`.** Se llama con 1/30 jugando y con
 2 s al ponerse al dia. Nada dentro puede depender del tamano del paso; el
 viento, en particular, es funcion pura de `state.time`.
@@ -161,12 +173,27 @@ se manda por encima de UNO, asi que no es que salgan pocas rompientes: no cabe
 ninguna. Todo eso se calcula en Lua (`Surface.frame`) y se manda como
 uniformes, que es lo que permite medirlo sin ventana.
 
-Dos cosas del shader parecen rarezas y no lo son. Los hashes muerden la celda en
-**modulo** porque a las pocas horas de singladura las coordenadas del mundo se
-quedan sin decimales y el mar hierve. Y el origen del campo se **arrastra**
-entre fotogramas (`Surface.update`, con lo que anda el barco mas lo que desfila
-el agua) en vez de calcularse desde `state.x`: el eje del campo gira con el
-viento, y proyectar una posicion enorme sobre un eje que rola manda el mar
+Tres cosas del shader parecen rarezas y no lo son, y las tres son lo mismo: en
+el mar no puede haber un numero grande. En un PC da igual; en un movil la
+precision del fragmento puede ser de once bits, y con once bits `fract()` de un
+numero de dos cifras ya no distingue nada. El sintoma es inconfundible y costo
+un desconcierto: el mar entero en azul liso, sin una veta de espuma, con la
+estela encima perfectamente visible -- porque la estela son distancias en
+pantalla, numeros pequenos y sin `fract` de por medio. Asi que: **el grano se
+LEE de una textura** en vez de calcularse con un hash aritmetico (los numeros
+intermedios de ese hash andan por el cincuenta, y ahi es donde se moria); **del
+origen solo viaja el decimal**, y las celdas enteras van como desplazamiento
+dentro de la textura, que es donde no cuestan precision; y **las fases del
+oleaje llegan envueltas en una vuelta**, porque un `sin()` de setecientos
+radianes es ruido en cuanto la maquina no es un PC. Ese grano no puede salir de
+`Util.hash01`: su tercer argumento no hace nada (entra multiplicado por el
+propio modulo) y ademas es casi afin, asi que repartido por una textura se lee
+como una rampa y no como ruido -- se mezcla en `src/surface.lua`, con un seno.
+
+Y una cuarta que no es de precision: el origen del campo se **arrastra** entre
+fotogramas (`Surface.update`, con lo que anda el barco mas lo que desfila el
+agua) en vez de calcularse desde `state.x`, porque el eje del campo gira con el
+viento y proyectar una posicion enorme sobre un eje que rola manda el mar
 disparado de lado en cuanto el viento rola un grado.
 
 La estela va DENTRO del agua y no encima: `src/sea.lua` le manda al shader la
@@ -264,8 +291,12 @@ que exista el PNG correspondiente en `assets/`, en cuyo caso gana el archivo.
 * **Mar**: `src/surface.lua`. El balance —cuanta espuma da cada viento, cuanto
   se estiran las vetas, donde caen los escalones de color— esta en
   `Surface.frame`, en Lua, y el shader solo evalua; la forma de la espuma (el
-  ancho de la veta, la octava fina, la sombra del dorso) esta en el GLSL. Vale
-  para los dos: la mezcla importa mas que cada trazo, y si la mayoria de los
+  ancho de la veta, la octava fina, la sombra del dorso) esta en el GLSL. Y una
+  regla que no se ve mirando la pantalla de un PC: **ningun numero del campo
+  puede ser grande** — nada de coordenadas absolutas, nada de angulos de mas de
+  unas vueltas, y el grano de una textura y no de una cuenta. El precio de
+  saltarsela es que el mar desaparezca entero en el movil sin que en escritorio
+  se note nada. Vale para los dos: la mezcla importa mas que cada trazo, y si la mayoria de los
   pixeles claros suben de color la pantalla se llena de marcas brillantes
   iguales y el mar se lee como LLUVIA. El blanco es de las rompientes y va
   suelto. Correr `tests/test_sea.lua` despues.
