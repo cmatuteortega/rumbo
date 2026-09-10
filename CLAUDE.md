@@ -168,7 +168,12 @@ como que el barco cia. Con viento flojo quedan cuatro rizos y ni una racha.
 Los campos que
 desfilan (olas, rachas, y las manchas de agua honda) no se reciclan con un
 modulo —eso da un tiron cada vuelta— sino desplazando el punto alrededor del
-cual se barren las celdas. Y los trazos no se pintan segun se recorren: se
+cual se barren las celdas. Y lo andado por ese punto se INTEGRA cuadro a cuadro
+en `Sea.update`, nunca `state.time` por el ritmo de ahora: como el viento rola y
+refresca sin parar, multiplicar el tiempo vivido por el ritmo del momento
+reescribe hacia atras el desfile entero y el mar ACELERA con las horas de
+partida (a las ocho, 39,7 px/s en vez de 0,7). `tests/test_sea.lua` lo mide a
+0, 1, 8 y 72 horas. Y los trazos no se pintan segun se recorren: se
 apuntan por sprite y se sueltan al final todos los de uno seguidos, porque con
 treinta y seis sprites entremezclados al azar cada trazo rompia el envio del
 anterior.

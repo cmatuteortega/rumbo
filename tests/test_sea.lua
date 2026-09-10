@@ -241,6 +241,63 @@ do
     check("y en calma tampoco", Sea.WAVE_DRIFT[1] > 0 and Sea.GUST_DRIFT[1] > 0)
 end
 
+--== El desfile no acelera =================================================
+
+print("\nel desfile no acelera con las horas de partida")
+do
+    -- Este es el fallo que costo tres arreglos de tuning encontrar, y no se ve
+    -- mirando la pantalla: se ve restando dos medidas separadas por ocho horas
+    -- de partida. El desfile salia de state.time por el ritmo del momento
+    -- (drift = t * v(t)), y como el viento rola y refresca sin parar, lo que se
+    -- movia el campo era v + t*dv/dt -- un sumando que crece con las horas sin
+    -- techo. A las ocho horas las olas iban a 39,7 px/s y las rachas a 146.
+    --
+    -- Se nota AMARRADO, que es donde el barco no cruza el campo y el desfile se
+    -- queda solo en pantalla, asi que asi se mide.
+    local function anda(horas)
+        local s = World.new(4321)
+        s.docked, s.bound = "x", nil
+        s.x, s.y = 500, 500
+        s.time = horas * 3600
+        s.trim, s.hull, s.morale = "full", 100, 100
+        World.updateWind(s)
+
+        Sea.reset()
+        local dt = 1 / 30
+        local function correr(segundos)
+            for _ = 1, math.floor(segundos / dt) do
+                s.time = s.time + dt
+                World.updateWind(s)
+                Sea.update(s, dt)
+            end
+        end
+
+        -- Un segundo de rodaje antes de medir: recien reseteado el campo esta
+        -- en cero y el primer cuadro da un salto que no es la velocidad de
+        -- crucero. Lo que se quiere saber es a que va el mar YA puesto.
+        correr(1)
+        local ax, ay, bx, by, f0 = Sea.drift()
+        correr(1)
+        local cx, cy, dx, dy, f1 = Sea.drift()
+        return math.sqrt((cx - ax) ^ 2 + (cy - ay) ^ 2),
+               math.sqrt((dx - bx) ^ 2 + (dy - by) ^ 2),
+               math.abs(f1 - f0)
+    end
+
+    local techoOla   = Sea.WAVE_DRIFT[1] + Sea.WAVE_DRIFT[2]
+    local techoRacha = Sea.GUST_DRIFT[1] + Sea.GUST_DRIFT[2]
+    local techoVaiven = Sea.SURGE_RATE[1] + Sea.SURGE_RATE[2]
+
+    for _, horas in ipairs({ 0, 1, 8, 72 }) do
+        local ola, racha, vaiven = anda(horas)
+        check(string.format("a las %d h el campo sigue a su ritmo", horas),
+              ola <= techoOla + 0.01 and racha <= techoRacha + 0.01
+                                     and vaiven <= techoVaiven + 0.01,
+              string.format("%.2f / %.2f px/s y %.3f rad/s, techo %.2f / %.2f y %.2f",
+                            ola, racha, vaiven, techoOla, techoRacha, techoVaiven))
+    end
+end
+
 --== Estela ================================================================
 
 print("\nla estela dice lo que hace el barco")

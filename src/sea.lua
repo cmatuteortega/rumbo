@@ -25,9 +25,11 @@
 -- lo tiene: se queda en su punto del mundo, pero se dibuja siempre derecho,
 -- porque una cresta transversal cruza la derrota y la derrota apunta arriba.
 --
--- Ademas, nada del mar se guarda: olas, rachas, islas, escollos, estela y
--- salpicaduras son funcion pura de la posicion del mundo, de la semilla y del
--- tiempo. El mar es infinito y ocupa cero bytes.
+-- Ademas, nada del mar se guarda EN LA PARTIDA: islas, escollos, puertos y el
+-- reparto de las olas salen de la posicion del mundo y de la semilla, y la
+-- estela, las salpicaduras y lo andado por el desfile viven en este modulo y se
+-- ponen a cero al entrar (Sea.reset). El mar es infinito y ocupa cero bytes del
+-- fichero de guardado.
 
 local Constants = require('src.constants')
 local Palette   = require('src.palette')
@@ -68,6 +70,47 @@ Sea.SCENERY_CELL = 250  -- islas y escollos
 -- Ship.BASE_SPEED, y ahi las ata tests/test_sea.lua.
 Sea.WAVE_DRIFT = { 0.15, 0.55 }
 Sea.GUST_DRIFT = { 0.8, 2.0 }
+
+-- Y a que ritmo respira el tren de olas, en radianes por segundo, con el mismo
+-- reparto {calma, lo que suma el viento}. Medio minuto por vaiven con viento
+-- duro: una mar de fondo tarda en pasar y no tiembla.
+Sea.SURGE_RATE = { 0.09, 0.11 }
+
+--==========================================================================
+-- El desfile
+--==========================================================================
+--
+-- Donde ha llegado el campo de olas y el de rachas, y por donde va el vaiven
+-- del tren. Se INTEGRAN aqui, cuadro a cuadro, y ese es todo el motivo de que
+-- existan estas cuatro variables.
+--
+-- Antes se sacaban de state.time por el ritmo del momento -- drift = t * v(t),
+-- fase = t * w(t) -- y parecia lo mismo, pero no lo es: el viento rola y
+-- refresca sin parar (World.updateWind), asi que multiplicar el tiempo VIVIDO
+-- por el ritmo de AHORA reescribe hacia atras el desfile entero cada vez que
+-- cambia el viento. Lo que se ve moverse no es v, es
+--
+--     d(t * v(t))/dt  =  v  +  t * dv/dt
+--
+-- y el segundo sumando crece con las horas de partida sin techo ninguno. Medido
+-- en el juego: a la hora de travesia las olas iban a 3 px/s en vez de a 0,7; a
+-- las dos, a 9,9; a las ocho, a 39,7 -- mas deprisa que el mar viejo que
+-- llevabamos tres arreglos intentando calmar -- y las rachas a 146, con el
+-- tren de olas hirviendo a 7,6 radianes por segundo. Y pasaba AMARRADO, que es
+-- donde canta, porque en puerto el barco no cruza el campo y el desfile se
+-- queda solo en pantalla.
+--
+-- Integrando, el ritmo es el ritmo: rolar el viento cambia hacia donde se
+-- mueve el campo de aqui en adelante, no lo que ya habia andado.
+--
+-- El precio es que el mar deja de ser funcion pura de state.time y pasa a
+-- depender de los cuadros que se han dibujado. No se guarda nada en la partida
+-- (Sea.reset lo pone a cero al entrar a la travesia), asi que la regla de
+-- "nada del mar se guarda" sigue en pie; lo que se pierde es que dos partidas
+-- en el mismo instante vean la misma ola, y eso no lo miraba nadie.
+local waveX, waveY = 0, 0
+local gustX, gustY = 0, 0
+local surge = 0
 
 --==========================================================================
 -- Camara
@@ -269,6 +312,14 @@ function Sea.reset()
     wake, spray = {}, {}
     lastX, lastY, lastDist = nil, nil, nil
     sprayAcc, sprayN = 0, 0
+    waveX, waveY, gustX, gustY, surge = 0, 0, 0, 0, 0
+end
+
+-- Lo andado por el campo, para tests/test_sea.lua: que el desfile no acelere
+-- con las horas de partida no se ve mirando la pantalla -- se ve restando dos
+-- medidas con ocho horas de diferencia.
+function Sea.drift()
+    return waveX, waveY, gustX, gustY, surge
 end
 
 local function shedWake(state, frac)
@@ -343,6 +394,18 @@ function Sea.update(state, dt)
     -- enteros) haria explotar el rozamiento de las gotas y abriria la V de una
     -- zancada. Se recorta aqui, que es donde vive el adorno.
     dt = math.min(dt, 1 / 20)
+
+    -- El desfile, integrado: se suma lo que el campo anda EN ESTE cuadro, al
+    -- ritmo de este cuadro. Ver el bloque "El desfile" mas arriba -- es la
+    -- diferencia entre un mar que va a lo que dicen WAVE_DRIFT/GUST_DRIFT y uno
+    -- que acelera segun se juega.
+    local sea = Sea.state(state)
+    local tx, ty = windVector(state)
+    local vWave = (Sea.WAVE_DRIFT[1] + Sea.WAVE_DRIFT[2] * sea) * dt
+    local vGust = (Sea.GUST_DRIFT[1] + Sea.GUST_DRIFT[2] * sea) * dt
+    waveX, waveY = waveX + tx * vWave, waveY + ty * vWave
+    gustX, gustY = gustX + tx * vGust, gustY + ty * vGust
+    surge = surge + (Sea.SURGE_RATE[1] + Sea.SURGE_RATE[2] * sea) * dt
 
     -- Una vuelta de la partida mueve el barco horas de golpe: la estela vieja
     -- queda a mil pixeles de aqui y los brazos se abririan a lo ancho del mar.
@@ -419,11 +482,10 @@ local function drawWaves(state)
 
     -- El campo entero desfila a sotavento. No se recicla con un modulo -- eso
     -- da un tiron cada vuelta --: lo que se desplaza es el punto ALREDEDOR del
-    -- cual se barren las celdas, asi que el mar avanza sin costura.
-    local drift = state.time * (Sea.WAVE_DRIFT[1] + Sea.WAVE_DRIFT[2] * sea)
-    local ox, oy = tx * drift, ty * drift
+    -- cual se barren las celdas, asi que el mar avanza sin costura. Lo andado
+    -- se integra en Sea.update y no se saca de state.time; el porque, arriba.
+    local ox, oy = waveX, waveY
     local cell = Sea.WAVE_CELL
-    local t = state.time
 
     forEachCell(state.x - ox, state.y - oy, cell, 0, function(cx, cy)
         local wx = (cx + Util.hash01(cx, cy, 1)) * cell
@@ -455,17 +517,18 @@ local function drawWaves(state)
         -- un poco despues. Con una fase suelta por ola el mar hierve; con
         -- esta, respira.
         --
-        -- Respira MUY despacio, medio minuto por vaiven. Empezo en dos
-        -- radianes por segundo -- tres subidas y bajadas cada diez segundos --
-        -- y era la otra mitad del agua nerviosa: el desfile ponia la carrera y
-        -- esto ponia el hervor. Baja con el desfile y por lo mismo, que una mar
-        -- de fondo tarda en pasar y no tiembla.
+        -- Respira MUY despacio, medio minuto por vaiven (SURGE_RATE). Empezo
+        -- en dos radianes por segundo -- tres subidas y bajadas cada diez
+        -- segundos -- y era la otra mitad del agua nerviosa: el desfile ponia
+        -- la carrera y esto ponia el hervor. La fase tambien se integra, y por
+        -- lo mismo: multiplicada por state.time llegaba a 7,6 rad/s a las ocho
+        -- horas, que es el mar entero hirviendo una vez por segundo.
         local along = wx * tx + wy * ty
-        local surge = math.sin(along * 0.075 - t * (0.09 + 0.11 * sea)) * (0.5 + 2.2 * sea)
+        local lift = math.sin(along * 0.075 - surge) * (0.5 + 2.2 * sea)
 
         local x, y = Sea.project(state,
-                                 wx + ox + tx * surge,
-                                 wy + oy + ty * surge)
+                                 wx + ox + tx * lift,
+                                 wy + oy + ty * lift)
         if not onScreen(x, y, 22) then return end
 
         -- Cada cresta se tuerce un poco de su cuenta. Un mar de trazos
@@ -509,8 +572,7 @@ local function drawGusts(state)
     -- Al reves que las crestas: la racha corre A FAVOR del viento, asi que en
     -- pantalla cruza las olas en angulo recto. Es lo que ensena de donde sopla.
     local streak = Sea.screenAngle(state, tx, ty)
-    local drift = state.time * (Sea.GUST_DRIFT[1] + Sea.GUST_DRIFT[2] * sea)
-    local ox, oy = tx * drift, ty * drift
+    local ox, oy = gustX, gustY
     local cell = Sea.GUST_CELL
 
     forEachCell(state.x - ox, state.y - oy, cell, 0, function(cx, cy)

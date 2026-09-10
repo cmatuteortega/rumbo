@@ -669,6 +669,37 @@ que es exactamente como se ve el mar desde una cubierta. El vaiven del tren de
 olas va por el mismo camino — medio minuto por respiracion, que es lo que tarda
 una mar de fondo en pasar.
 
+### El mar aceleraba con las horas de partida
+
+Esto se llevo tres intentos de ajuste antes de que apareciera, y merece quedar
+escrito porque el sintoma no se parecia en nada a la causa: **el mar iba cada
+vez mas rapido cuanto mas llevabas jugado**, y se veia sobre todo amarrado, que
+es donde el barco no cruza el campo y el desfile se queda solo en pantalla.
+
+El desfile salia de `state.time` multiplicado por el ritmo del momento —
+`drift = t * v(t)`. Parece lo mismo que integrarlo y no lo es: el viento rola y
+refresca sin parar, asi que multiplicar el tiempo **vivido** por el ritmo de
+**ahora** reescribe hacia atras el desfile entero cada vez que cambia el viento.
+Lo que se ve moverse no es `v`, es
+
+    d(t · v(t))/dt  =  v  +  t · dv/dt
+
+y el segundo sumando crece con las horas sin techo ninguno. Medido: a la hora de
+travesia las olas iban a 3 px/s en vez de a 0,7; a las dos, a 9,9; a las ocho, a
+39,7 —mas deprisa que el mar original que llevabamos tres arreglos intentando
+calmar— y las rachas a 146, con el tren de olas hirviendo a 7,6 radianes por
+segundo, un ciclo entero por segundo.
+
+Ahora se **integra** en `Sea.update`: se suma lo que el campo anda en este
+cuadro, al ritmo de este cuadro. Rolar el viento cambia hacia donde se mueve el
+campo de aqui en adelante, no lo que ya habia andado. El precio es que el mar
+deja de ser funcion pura de `state.time`; no se guarda nada en la partida, asi
+que la regla sigue en pie, y lo que se pierde —que dos partidas en el mismo
+instante vean la misma ola— no lo miraba nadie.
+
+La leccion general: **un ritmo que cambia se integra, no se multiplica por el
+reloj**. La prueba lo mide a 0, 1, 8 y 72 horas de partida.
+
 Dos facturas que conviene saberse:
 
 * el desfile **ya no dice hacia donde** sopla; a siete decimas contra los diez
